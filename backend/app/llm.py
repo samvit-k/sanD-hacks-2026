@@ -42,7 +42,8 @@ class GeminiLLM:
         from google import genai  # imported lazily so tests don't need credentials
 
         if not settings.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY is not set in .env")
+            raise RuntimeError("Gemini is not configured on the server: GEMINI_API_KEY is empty for the running "
+                               "backend process (set it in .env, or restart the backend without overriding it).")
         self._genai = genai
         from google.genai import types
 
