@@ -5,7 +5,8 @@ from typing import List
 
 import numpy as np
 
-from app.contracts import (ChatAnswer, Conditions, ExtractedClaim, ExtractionResult, ImpactJudgment, PairJudgment)
+from app.contracts import (ChatAnswer, Conditions, ExtractedClaim, ExtractionResult, ImpactJudgment, PairJudgment,
+                           QuestionProposal)
 
 _LINE = re.compile(r"^\[([a-z0-9-]+:p\d+_s\d+)\] \((\w+)\) (.*)$")
 _ID = re.compile(r"\[([a-z0-9-]+:p\d+_s\d+)\]")
@@ -21,6 +22,10 @@ class FakeLLM:
         self.pair_label = pair_label
         self.chat_answer = None          # set to a ChatAnswer to script the next chat replies
         self.fail_chat = False
+        self.proposals: List[QuestionProposal] = []  # scripted question proposals, consumed in order
+        self.fail_proposal = False
+        self.fail_extraction = False
+        self.temperatures: List = []
         self.prompts: List[str] = []
 
     def count(self, marker: str) -> int:
@@ -36,9 +41,22 @@ class FakeLLM:
             out.append((v / (np.linalg.norm(v) or 1)).tolist())
         return out
 
-    def generate_json(self, prompt, model_cls):
+    def generate_json(self, prompt, model_cls, temperature=None):
         self.prompts.append(prompt)
+        self.temperatures.append(temperature)
+        if model_cls is QuestionProposal:
+            if self.fail_proposal:
+                raise RuntimeError("simulated Gemini outage")
+            if self.proposals:
+                return self.proposals.pop(0)
+            n = self.count("Already suggested")
+            return QuestionProposal(
+                question=f"How does AI-assisted tutoring influence student learning outcomes compared with "
+                         f"traditional instruction{' (variant ' + str(n) + ')' if n else ''}?",
+                rationale="Names the intervention, the outcome and a comparison.")
         if model_cls is ExtractionResult:
+            if self.fail_extraction:
+                raise RuntimeError("simulated Gemini outage")
             claims = []
             for line in prompt.splitlines():
                 m = _LINE.match(line)

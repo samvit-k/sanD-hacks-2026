@@ -35,13 +35,14 @@ export function RichText({ text, references = {}, onReference }) {
   })
 }
 
-export default function ChatMessage({ message, contextLabel, onReference }) {
+export default function ChatMessage({ message, contextLabel, onReference, stale = false }) {
+  const era = stale ? ' stale' : ''
   if (message.role === 'status') {
     return <div className={`chat-status ${message.tone ?? ''}`} role="status">{message.content}</div>
   }
   if (message.role === 'user') {
     return (
-      <div className="chat-row user">
+      <div className={`chat-row user${era}`}>
         <div className="chat-bubble">
           {message.context && contextLabel && <div className="chat-about">About: {contextLabel(message.context)}</div>}
           {message.content}
@@ -51,13 +52,13 @@ export default function ChatMessage({ message, contextLabel, onReference }) {
   }
   if (message.guardrail) {
     return (
-      <div className="chat-row assistant" data-testid="assistant-message">
+      <div className={`chat-row assistant${era}`} data-testid="assistant-message">
         <div className="warn-card" role="note"><b>Answer withheld.</b> {message.content}</div>
       </div>
     )
   }
   return (
-    <div className="chat-row assistant" data-testid="assistant-message">
+    <div className={`chat-row assistant${era}`} data-testid="assistant-message">
       <ModelBox title="Research assistant (Gemini) — interpretation, not a verdict">
         {message.insufficient_evidence && <div className="chat-flag">Insufficient evidence</div>}
         <p className="chat-text"><RichText text={message.content} references={message.references} onReference={onReference} /></p>

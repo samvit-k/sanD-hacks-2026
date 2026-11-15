@@ -1,8 +1,7 @@
 // Right-hand research assistant: PDF uploads (existing ingestion pipeline) + evidence-grounded chat.
 // Styled like the left workspace sidebar. Kept mounted while closed so drafts and state survive.
 import { useEffect, useRef, useState } from 'react'
-import { STATUS } from '../../state/useUploads.js'
-import { MESSAGES } from '../../state/useUploads.js'
+import { MESSAGES, STATUS } from '../../state/useUploads.js'
 import ChatMessage from './ChatMessage.jsx'
 
 const MODES = {
@@ -148,7 +147,25 @@ function UploadSection({ uploads, canUpload, blockedReason, hasLibrary }) {
   )
 }
 
-function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLabel, onClearContext, onReference, focusTick }) {
+/** Messages written under an earlier central question are marked, with a divider where the question changed.
+ * The server also keeps those turns out of the model's context. */
+export function withQuestionDividers(messages, currentQuestion) {
+  const out = []
+  let last = null
+  for (const m of messages) {
+    const q = m.role === 'status' ? null : m.question ?? null
+    if (q && q !== last) {
+      if (q !== currentQuestion) out.push({ divider: true, key: `div-${m.id}`, text: 'Asked under an earlier central question', question: q })
+      else if (last) out.push({ divider: true, key: `div-${m.id}`, text: 'Current central question', question: q })
+      last = q
+    }
+    out.push({ message: m, stale: !!q && !!currentQuestion && q !== currentQuestion })
+  }
+  return out
+}
+
+function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLabel, onClearContext, onReference, focusTick,
+  currentQuestion }) {
   const [draft, setDraft] = useState('')
   const listRef = useRef(null)
   const inputRef = useRef(null)
@@ -182,9 +199,12 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
             ))}
           </div>
         )}
-        {chat.messages.map((m) => (
-          <ChatMessage key={m.id} message={m} contextLabel={contextLabel} onReference={onReference} />
-        ))}
+        {withQuestionDividers(chat.messages, currentQuestion).map((row) => (row.divider ? (
+          <div key={row.key} className="chat-divider" role="separator"><span>{row.text}:</span> {row.question}</div>
+        ) : (
+          <ChatMessage key={row.message.id} message={row.message} stale={row.stale} contextLabel={contextLabel}
+            onReference={onReference} />
+        )))}
         {chat.pending && (
           <>
             <div className="chat-row user pending">
@@ -232,7 +252,7 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
 
 export default function AssistantPanel({
   open, onClose, chat, uploads, canUpload, uploadBlockedReason, hasLibrary, chatEnabled, chatBlockedReason,
-  context, contextLabel, onClearContext, onReference, focusTick,
+  context, contextLabel, onClearContext, onReference, focusTick, currentQuestion = null,
 }) {
   return (
     <aside id="assistant-panel" className="assistant" hidden={!open} aria-label="Research assistant">
@@ -245,7 +265,8 @@ export default function AssistantPanel({
       <div className="as-body">
         <UploadSection uploads={uploads} canUpload={canUpload} blockedReason={uploadBlockedReason} hasLibrary={hasLibrary} />
         <ChatSection chat={chat} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason} context={context}
-          contextLabel={contextLabel} onClearContext={onClearContext} onReference={onReference} focusTick={focusTick} />
+          contextLabel={contextLabel} onClearContext={onClearContext} onReference={onReference} focusTick={focusTick}
+          currentQuestion={currentQuestion} />
       </div>
     </aside>
   )

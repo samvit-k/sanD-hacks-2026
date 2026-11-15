@@ -88,7 +88,7 @@ export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
   )
 }
 
-export function QuestionView({ graph, workspace, onAsk }) {
+export function QuestionView({ graph, workspace, onAsk, onEditQuestion }) {
   const papers = Object.keys(graph.papers ?? {}).length
   const claims = Object.keys(graph.claims ?? {}).length
   return (
@@ -99,7 +99,10 @@ export function QuestionView({ graph, workspace, onAsk }) {
         This question grounds claim extraction, comparison and impact analysis for {papers} papers and {claims} claims.
         {workspace?.source === 'default' ? ' It is the demo default from the server configuration.' : ''}
       </p>
-      <div className="insp-ask"><AskButton label="Ask about the central question" onAsk={onAsk} context={{ kind: 'question', id: 'q' }} /></div>
+      <div className="insp-ask">
+        <AskButton label="Ask about the central question" onAsk={onAsk} context={{ kind: 'question', id: 'q' }} />
+        {onEditQuestion && <button type="button" className="btn btn-sm" onClick={onEditQuestion}>Change question…</button>}
+      </div>
     </>
   )
 }

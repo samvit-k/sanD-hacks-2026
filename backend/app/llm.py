@@ -32,7 +32,7 @@ def quota_retry_delay(exc: Exception) -> Optional[float]:
 class LLM(Protocol):
     model_name: str
 
-    def generate_json(self, prompt: str, model_cls: Type[T]) -> T: ...
+    def generate_json(self, prompt: str, model_cls: Type[T], temperature: Optional[float] = None) -> T: ...
 
     def embed(self, texts: List[str]) -> List[List[float]]: ...
 
@@ -67,7 +67,9 @@ class GeminiLLM:
                 log.warning("%s failed (%s); retrying in %ss", what, exc, wait)
                 time.sleep(wait)
 
-    def generate_json(self, prompt: str, model_cls: Type[T]) -> T:
+    def generate_json(self, prompt: str, model_cls: Type[T], temperature: Optional[float] = None) -> T:
+        """Structured output. Low temperature by default (faithful extraction/judgment); question
+        proposals pass a higher one so "Regenerate" can yield a different formulation."""
         from google.genai import types
 
         def call():
@@ -77,7 +79,7 @@ class GeminiLLM:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=model_cls,
-                    temperature=0.1,
+                    temperature=0.1 if temperature is None else temperature,
                 ),
             )
             if isinstance(resp.parsed, model_cls):

@@ -54,21 +54,52 @@ def delete_all(conn) -> None:
                  "chat_messages RESTART IDENTITY CASCADE")
 
 
+def clear_analysis(conn) -> int:
+    """Delete everything that was derived under the current question (claims and, by cascade, their
+    relationships and impacts) but KEEP the papers, their sentence index, discovery links, the chat
+    history and node numbers. Papers become 'pending' until they are deliberately re-analyzed.
+    Claim ids are serial, so re-extracted claims get new ids and new node numbers; retired numbers are
+    never reused. Returns the number of papers now pending."""
+    conn.execute("DELETE FROM impacts")
+    conn.execute("DELETE FROM relationships")
+    conn.execute("DELETE FROM claims")
+    return conn.execute("UPDATE papers SET analysis_status = 'pending', relevance = NULL").rowcount
+
+
+def delete_claims_for_paper(conn, paper_id: str) -> None:
+    """Leftovers of an interrupted re-analysis (cascades to their relationships/impacts)."""
+    conn.execute("DELETE FROM claims WHERE paper_id = %s", (paper_id,))
+
+
+def pending_papers(conn) -> List[Dict]:
+    """Papers awaiting analysis under the current question, in the order they must be analyzed:
+    library papers first (oldest first), then evaluated papers (their impact needs the library)."""
+    return conn.execute(
+        """SELECT id, title, is_new, analysis_status FROM papers WHERE analysis_status <> 'complete'
+           ORDER BY is_new, created_at, id"""
+    ).fetchall()
+
+
 # ---------- chat ----------
 def insert_chat_message(conn, m: Dict) -> Dict:
     return conn.execute(
         """INSERT INTO chat_messages (session_id, role, content, context, cited_sentence_ids,
-                                      insufficient_evidence, guardrail)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                                      insufficient_evidence, guardrail, question)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (m["session_id"], m["role"], m["content"], Jsonb(m.get("context")) if m.get("context") else None,
-         m.get("cited_sentence_ids") or [], bool(m.get("insufficient_evidence")), m.get("guardrail")),
+         m.get("cited_sentence_ids") or [], bool(m.get("insufficient_evidence")), m.get("guardrail"),
+         m.get("question")),
     ).fetchone()
 
 
-def chat_messages(conn, session_id: str, limit: int = 200) -> List[Dict]:
-    rows = conn.execute(
-        "SELECT * FROM chat_messages WHERE session_id = %s ORDER BY id DESC LIMIT %s", (session_id, limit)
-    ).fetchall()
+def chat_messages(conn, session_id: str, limit: int = 200, question: Optional[str] = None) -> List[Dict]:
+    """A session's messages, oldest first. With `question`, only messages written under that question."""
+    if question is None:
+        rows = conn.execute("SELECT * FROM chat_messages WHERE session_id = %s ORDER BY id DESC LIMIT %s",
+                            (session_id, limit)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM chat_messages WHERE session_id = %s AND question = %s "
+                            "ORDER BY id DESC LIMIT %s", (session_id, question, limit)).fetchall()
     return list(reversed(rows))
 
 
@@ -136,7 +167,8 @@ def analysis_counts(conn) -> Dict[str, int]:
                   (SELECT count(*) FROM claims c JOIN papers p ON p.id = c.paper_id WHERE NOT p.is_new)
                       AS library_claims,
                   (SELECT count(*) FROM relationships) AS relationships,
-                  (SELECT count(*) FROM impacts) AS impacts"""
+                  (SELECT count(*) FROM impacts) AS impacts,
+                  (SELECT count(*) FROM papers WHERE analysis_status = 'pending') AS pending_papers"""
     ).fetchone()
     return {k: int(v) for k, v in row.items()}
 

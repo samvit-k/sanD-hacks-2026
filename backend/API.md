@@ -33,30 +33,60 @@ Uploads are synchronous. A library upload makes about 2 + k Gemini calls; an eva
 - `has_library`: true when at least one library paper has verified claims. Enable "Evaluate a new paper" only when this is true.
 
 ### `PUT /api/workspace`
+Called by the UI **only after the user explicitly confirms** a question (Gemini never finalizes it).
 Request:
 ```json
-{"question": "Do AI tutors improve learning?", "reset": false}
+{"question": "Do AI tutors improve learning?", "reset": false, "keep_papers": false}
 ```
-Whitespace is trimmed and collapsed. The question must be 1–300 characters.
+Whitespace is trimmed and collapsed. The question must be 1–300 characters. `reset` and `keep_papers` are
+mutually exclusive (both true → `422`).
 
 | Situation | Result |
 |---|---|
-| No analysis yet | `200`, question stored |
-| Same question as current (even with `reset: true`) | `200`, nothing deleted, `"reset": false` |
-| Different question, analysis exists, `reset: false` | `409` (below). Nothing changes. |
-| Different question, analysis exists, `reset: true` | `200`, `"reset": true`. Papers, sentences, claims, relationships, impacts and discovery links are deleted, and the new question is stored, all in one transaction. The discovery cache is kept. |
+| No papers yet | `200`, question stored |
+| Same question as current (any flags) | `200`, nothing deleted, `"reset": false`, `"analysis_cleared": false` |
+| Different question, papers exist, no flag | `409` (below). Nothing changes. |
+| Different question, papers exist, `keep_papers: true` | `200`, `"analysis_cleared": true`. Claims, relationships and impacts are deleted; papers, sentences, discovery links, node numbers and chat history are kept; every paper becomes `analysis_status: "pending"` (listed in `pending_papers`). Nothing is re-analyzed until the user asks (`POST /api/papers/{id}/analyze`). Uploads return `409 {code: "pending_analysis"}` until no paper is pending. |
+| Different question, papers exist, `reset: true` | `200`, `"reset": true`. Everything (papers, sentences, claims, relationships, impacts, discovery links, node numbers, chat) is deleted and the new question stored, in one transaction. The discovery cache is kept. |
 | Empty or over 300 characters | `422` `{"detail": "The research question must not be empty."}` |
 
-200 response: the `GET /api/workspace` body plus `"reset": true|false`.
+200 response: the `GET /api/workspace` body plus `"reset"`, `"analysis_cleared"`, `"previous_question"`, `"changed"`.
+`GET /api/workspace` also returns `counts.pending_papers` and `pending_papers: [{id, title, is_new, status}]`
+(library papers first, then evaluated papers — the order re-analysis must follow).
 
-409 response (show a "Start a new evidence graph? This deletes N papers…" confirmation, then resend with `reset: true`):
+409 response (the UI shows what is kept and cleared, then resends with the user's explicit choice):
 ```json
 {"detail": {
-  "message": "Existing analysis was produced under a different research question. Resend with reset=true to delete it and start a new evidence graph.",
+  "message": "Existing analysis was produced under a different research question and is not reinterpreted. ...",
+  "code": "question_conflict", "options": ["keep_papers", "reset"],
   "current_question": "Do AI tutors improve learning?",
   "counts": {"papers": 4, "library_papers": 3, "evaluated_papers": 1, "claims": 4,
-             "library_claims": 3, "relationships": 5, "impacts": 2}}}
+             "library_claims": 3, "relationships": 5, "impacts": 2, "pending_papers": 0}}}
 ```
+
+### `POST /api/question/propose` (Stage C)
+Gemini **suggests** one central question from a broad interest. Writes nothing (`"saved": false`).
+```json
+{"interest": "I'm interested in how AI tutoring affects student learning outcomes.", "previous": []}
+```
+`previous` holds earlier suggestions for the same interest ("Regenerate" asks for a different formulation).
+```json
+{"interest": "...", "source": "gemini", "model": "gemini-…", "saved": false,
+ "proposal": {"question": "How does AI tutoring affect student learning outcomes compared with traditional instruction?",
+              "rationale": "One sentence on how the question focuses the interest (may be null)."}}
+```
+Checks (in `app/question.py`): a single question ending in `?`; no statistics, study citations or "studies show"
+findings; no explicit restrictions absent from the interest (years, ages/grades, education levels, named age groups
+and settings, proper nouns such as places or products); not a repeat of `previous`. One corrective retry at most.
+These are conservative pattern checks, not semantic verification: the user always reviews the question.
+Errors: `422` invalid interest · `503 {code: "model_unavailable"}` · `502 {code: "proposal_rejected"}`.
+
+### `POST /api/papers/{paper_id}/analyze` (Stage C)
+User-started re-analysis of a stored `pending` paper under the current question: extraction from its stored
+sentences, comparison with already-analyzed claims, and impact assessment for evaluated papers. Never deletes the
+paper or its text; on a Gemini failure (`503`) the paper stays pending. `409 {code: "analysis_order"}` for an
+evaluated paper while library papers are pending; `409 {code: "already_analyzed"}`; `404` unknown paper.
+Response: `{paper, question, claims_kept, relationships_created, impacts_assessed, pending_remaining, extraction, timings_s}`.
 
 ---
 
@@ -206,6 +236,9 @@ All chat calls are scoped by `session_id` (default `"default"`; pattern `[a-z0-9
 research sessions can be added without changing this contract.
 
 ### `GET /api/chat/messages?session_id=default`
+Each message carries `question`: the central question in force when it was written. Turns from an earlier question are
+shown as such and are not sent to the model.
+
 `{session_id, messages: [Message]}` in chronological order.
 
 ### `POST /api/chat`

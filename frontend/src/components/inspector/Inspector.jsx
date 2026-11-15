@@ -18,7 +18,7 @@ export function resolveSelection(graph, selection) {
   return null
 }
 
-export default function Inspector({ graph, workspace, selection, refs, onNavigate, onClose, onAsk }) {
+export default function Inspector({ graph, workspace, selection, refs, onNavigate, onClose, onAsk, onEditQuestion }) {
   const resolved = resolveSelection(graph, selection)
   if (!resolved) return null
   const { kind, item } = resolved
@@ -32,7 +32,7 @@ export default function Inspector({ graph, workspace, selection, refs, onNavigat
         {kind === 'relationship' && <RelationshipView rel={item} {...props} />}
         {kind === 'claim' && <ClaimView claim={item} {...props} />}
         {kind === 'paper' && <PaperView paper={item} {...props} />}
-        {kind === 'question' && <QuestionView graph={graph} workspace={workspace} onAsk={onAsk} />}
+        {kind === 'question' && <QuestionView graph={graph} workspace={workspace} onAsk={onAsk} onEditQuestion={onEditQuestion} />}
         {kind === 'discovery' && <DiscoveryView lead={item} discovery={graph.discovery} />}
       </div>
     </aside>

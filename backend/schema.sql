@@ -26,8 +26,13 @@ CREATE TABLE IF NOT EXISTS papers (
 -- Upload identity and progress: the full PDF content hash identifies "this exact file" (duplicate
 -- protection and timeout recovery); analysis_status is 'processing' while an upload is being analyzed.
 ALTER TABLE papers ADD COLUMN IF NOT EXISTS content_sha256 text;
-ALTER TABLE papers ADD COLUMN IF NOT EXISTS analysis_status text NOT NULL DEFAULT 'complete'
-    CHECK (analysis_status IN ('processing', 'complete'));
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS analysis_status text NOT NULL DEFAULT 'complete';
+-- 'pending': the paper and its sentences are stored but it has no analysis under the CURRENT question
+-- (after a user-confirmed question change that kept the papers). Re-created idempotently so older
+-- databases gain the value; existing rows always satisfy it.
+ALTER TABLE papers DROP CONSTRAINT IF EXISTS papers_analysis_status_check;
+ALTER TABLE papers ADD CONSTRAINT papers_analysis_status_check
+    CHECK (analysis_status IN ('pending', 'processing', 'complete'));
 CREATE INDEX IF NOT EXISTS papers_content_sha256 ON papers (content_sha256);
 
 -- Sentence IDs are globally unique: '{paper_id}:p{page}_s{n}'.
@@ -120,6 +125,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at            timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS chat_messages_session ON chat_messages (session_id, id);
+-- The research question in force when the message was written. After a confirmed question change,
+-- earlier messages are shown as belonging to the previous question and are not sent to the model.
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS question text;
 
 -- Which papers requested which cached results (many-to-many), so a shared query never
 -- re-assigns another paper's discovery results.

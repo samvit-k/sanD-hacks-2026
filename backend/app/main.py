@@ -1,13 +1,13 @@
 """ResearchLens API. Run from backend/: .venv/bin/uvicorn app.main:app --reload --port 8000"""
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import chat, db, discover as discovery, pipeline
+from . import chat, db, discover as discovery, pipeline, question as questions
 from .config import settings
 from .ingest import NoExtractableTextError
 from .llm import get_llm
@@ -48,18 +48,45 @@ def get_workspace():
 
 class WorkspaceRequest(BaseModel):
     question: str
-    reset: bool = False
+    reset: bool = False        # delete everything (papers included)
+    keep_papers: bool = False  # keep papers + text, clear their analysis for deliberate re-analysis
 
 
 @app.put("/api/workspace")
 def put_workspace(req: WorkspaceRequest):
-    """Set the active question. Changing it while analysis exists requires reset=true (409 otherwise)."""
+    """Set the active question (the UI calls this only after explicit user confirmation). Changing it while
+    papers exist needs keep_papers=true or reset=true; otherwise 409 and nothing changes."""
     try:
-        return _db_guard(lambda: pipeline.set_workspace_question(req.question, reset=req.reset))
+        return _db_guard(lambda: pipeline.set_workspace_question(req.question, reset=req.reset,
+                                                                 keep_papers=req.keep_papers))
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     except pipeline.QuestionConflict as exc:
-        raise HTTPException(409, {"message": str(exc), "current_question": exc.current, "counts": exc.counts})
+        raise HTTPException(409, {"message": str(exc), "code": "question_conflict", "current_question": exc.current,
+                                  "counts": exc.counts, "options": ["keep_papers", "reset"]})
+
+
+class ProposeRequest(BaseModel):
+    interest: str
+    previous: List[str] = []
+
+
+@app.post("/api/question/propose")
+def propose_question(req: ProposeRequest):
+    """Gemini suggests ONE central research question from a broad interest. Writes nothing: the user must
+    review, optionally edit, and confirm it (PUT /api/workspace) before it becomes the active question."""
+    try:
+        llm = get_llm()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    try:
+        return questions.propose_question(llm, req.interest, req.previous)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except questions.ProposalUnavailableError as exc:
+        raise HTTPException(503, {"message": str(exc), "code": "model_unavailable"})
+    except questions.ProposalRejectedError as exc:
+        raise HTTPException(502, {"message": str(exc), "code": "proposal_rejected"})
 
 
 @app.get("/api/graph")
@@ -130,10 +157,32 @@ def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None)
         raise HTTPException(422, str(exc))
     except (pipeline.NoQuestionError, pipeline.NoLibraryError) as exc:
         raise HTTPException(409, str(exc))
+    except pipeline.PendingAnalysisError as exc:
+        raise HTTPException(409, {"message": str(exc), "code": "pending_analysis"})
     except pipeline.DuplicatePaperError as exc:
         # Nothing was stored or changed; the existing paper keeps its analysis.
         raise HTTPException(409, {"message": str(exc), "code": "duplicate", "paper_id": exc.paper["id"],
                                   "title": exc.paper["title"]})
+    except pipeline.ModelUnavailableError as exc:
+        raise HTTPException(503, str(exc))
+
+
+@app.post("/api/papers/{paper_id}/analyze")
+def analyze_paper(paper_id: str):
+    """User-triggered re-analysis of a stored paper under the current question (after a confirmed
+    question change with keep_papers=true). Never deletes the paper or its text."""
+    try:
+        llm = get_llm()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    try:
+        return _db_guard(lambda: pipeline.analyze_stored_paper(llm, paper_id))
+    except KeyError:
+        raise HTTPException(404, "paper not found")
+    except pipeline.AlreadyAnalyzedError as exc:
+        raise HTTPException(409, {"message": str(exc), "code": "already_analyzed"})
+    except (pipeline.AnalysisOrderError, pipeline.NoLibraryError, pipeline.NoQuestionError) as exc:
+        raise HTTPException(409, {"message": str(exc), "code": "analysis_order"})
     except pipeline.ModelUnavailableError as exc:
         raise HTTPException(503, str(exc))
 

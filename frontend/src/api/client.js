@@ -2,6 +2,7 @@
 
 export const UPLOAD_TIMEOUT_MS = 180000
 export const CHAT_TIMEOUT_MS = 120000
+export const PROPOSE_TIMEOUT_MS = 60000
 export const DEFAULT_SESSION = 'default'
 
 export class ApiError extends Error {
@@ -59,7 +60,17 @@ async function request(path, { method = 'GET', json, form, timeoutMs = 30000 } =
 export const api = {
   health: () => request('/api/health'),
   workspace: () => request('/api/workspace'),
-  setQuestion: (question, reset = false) => request('/api/workspace', { method: 'PUT', json: { question, reset } }),
+  // Only ever called after the user confirmed the question. Changing the question of a project with papers
+  // needs an explicit choice: keepPapers (keep papers + text, clear analysis) or reset (delete everything);
+  // without one the server answers 409 {code: 'question_conflict', current_question, counts} and changes nothing.
+  setQuestion: (question, { reset = false, keepPapers = false } = {}) =>
+    request('/api/workspace', { method: 'PUT', json: { question, reset, keep_papers: keepPapers } }),
+  // Gemini SUGGESTS a question from a broad interest; the server saves nothing.
+  proposeQuestion: (interest, previous = []) =>
+    request('/api/question/propose', { method: 'POST', json: { interest, previous }, timeoutMs: PROPOSE_TIMEOUT_MS }),
+  // User-started re-analysis of one stored paper under the current question.
+  analyzePaper: (paperId) =>
+    request(`/api/papers/${encodeURIComponent(paperId)}/analyze`, { method: 'POST', timeoutMs: UPLOAD_TIMEOUT_MS }),
   graph: () => request('/api/graph'),
   checks: () => request('/api/checks'),
   latestImpact: async () => {

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_SESSION } from './api/client.js'
 import AssistantPanel from './components/assistant/AssistantPanel.jsx'
 import GraphCanvas from './components/GraphCanvas.jsx'
 import Legend from './components/Legend.jsx'
 import TopBar from './components/TopBar.jsx'
 import Inspector from './components/inspector/Inspector.jsx'
+import QuestionDialog from './components/question/QuestionDialog.jsx'
 import WorkspacePanel from './components/workspace/WorkspacePanel.jsx'
 import { DEFAULT_FILTERS, hiddenIds, matchingIds, nodeRefs } from './graph/toElements.js'
 import { useChat } from './state/useChat.js'
+import { useReanalysis } from './state/useReanalysis.js'
 import { useResearch } from './state/useResearch.js'
 import { STATUS, useUploads } from './state/useUploads.js'
 
@@ -87,6 +89,29 @@ export default function App() {
     addNote(note.text, { tone: note.tone, forSession: item.sessionId })
   }, [addNote, setImpact])
   const uploads = useUploads({ refresh: research.refresh, sessionId, onSettled: onUploadSettled })
+  const reanalysis = useReanalysis({ refresh: research.refresh })
+  const pendingPapers = workspace?.pending_papers ?? []
+  const [questionOpen, setQuestionOpen] = useState(false)
+  const autoOpened = useRef(false)
+  const canEditQuestion = live && !reanalysis.running && !uploads.busy
+  // First visit to an empty workspace: open the question dialog once (the user can still close it).
+  useEffect(() => {
+    if (live && workspace && !workspace.question && !autoOpened.current) {
+      autoOpened.current = true
+      setQuestionOpen(true)
+    }
+  }, [live, workspace])
+  // Called only after the server confirmed the save. A failed refresh throws back to the dialog, which
+  // reports "saved, but the view was not updated" and offers a retry (it never re-sends the question).
+  const onQuestionConfirmed = useCallback(async (ws) => {
+    await research.refresh({ fallback: false })
+    setQuestionOpen(false)
+    const pending = ws?.pending_papers?.length ?? 0
+    addNote(ws?.analysis_cleared
+      ? `Central question changed. The earlier analysis was cleared; ${pending} ${pending === 1 ? 'paper awaits' : 'papers await'} re-analysis (start it in the workspace panel).`
+      : ws?.reset ? 'Central question set. The earlier project was deleted, as you chose.' : 'Central question set.',
+    { tone: 'ok', forSession: sessionId })
+  }, [research.refresh, addNote, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [chatContext, setChatContext] = useState(null)
   const [focusTick, setFocusTick] = useState(0)
@@ -145,7 +170,8 @@ export default function App() {
   const contextLabel = (ctx) => describeContext(ctx, graph, refs)
   const uploadBlockedReason = !live
     ? 'Uploads are disabled while showing offline or sample data. Retry the connection first.'
-    : !workspace?.question ? 'Set a research question before uploading papers.' : ''
+    : !workspace?.question ? 'Set a research question before uploading papers.'
+      : pendingPapers.length || reanalysis.running ? 'Re-analyze the existing papers under the new question first.' : ''
   const chatBlockedReason = !live
     ? 'The assistant needs the live server (offline or sample data is shown).'
     : 'Set a research question to start asking.'
@@ -159,6 +185,9 @@ export default function App() {
         refs={refs}
         onSelectPaper={(id) => navigate({ kind: 'paper', id })}
         onSelectQuestion={() => navigate({ kind: 'question', id: 'q' })}
+        onEditQuestion={live ? () => setQuestionOpen(true) : undefined}
+        canEditQuestion={canEditQuestion}
+        reanalysis={live ? reanalysis : null}
         collapsed={collapsed}
         onToggle={() => setManualCollapsed(!collapsed)}
       />
@@ -177,11 +206,19 @@ export default function App() {
               onSelect={setSelection}
             />
           )}
+          {live && workspace && !workspace.question && !questionOpen && (
+            <div className="onboard-card" role="region" aria-label="Start a research workspace">
+              <div className="q-kicker">Start a research workspace</div>
+              <p>Describe what you want to investigate. Gemini can suggest a focused central question; you review, edit and confirm it.</p>
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => setQuestionOpen(true)}>Set the central question</button>
+            </div>
+          )}
           {graph && <Legend />}
           {graph && (
             <Inspector
               graph={graph} workspace={workspace} selection={selection} refs={refs}
               onNavigate={navigate} onClose={() => setSelection(null)} onAsk={chatEnabled ? askAbout : undefined}
+              onEditQuestion={canEditQuestion ? () => setQuestionOpen(true) : undefined}
             />
           )}
           {!assistantOpen && (
@@ -193,11 +230,14 @@ export default function App() {
       </main>
       <AssistantPanel
         open={assistantOpen} onClose={() => setAssistantOpen(false)} chat={chat} uploads={uploads}
-        canUpload={live && !!workspace?.question} uploadBlockedReason={uploadBlockedReason}
+        canUpload={live && !!workspace?.question && !pendingPapers.length && !reanalysis.running}
+        uploadBlockedReason={uploadBlockedReason} currentQuestion={workspace?.question ?? null}
         hasLibrary={!!workspace?.has_library} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason}
         context={chatContext} contextLabel={contextLabel} onClearContext={() => setChatContext(null)}
         onReference={onReference} focusTick={focusTick}
       />
+      <QuestionDialog open={questionOpen} workspace={workspace} onClose={() => setQuestionOpen(false)}
+        onConfirmed={onQuestionConfirmed} />
     </div>
   )
 }

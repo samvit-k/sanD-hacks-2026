@@ -26,10 +26,21 @@ describe('api client', () => {
     expect(err.message).toBe('Existing analysis…')
   })
 
-  it('sends the reset flag', async () => {
+  it('sends no destructive flag unless one is chosen explicitly', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockReturnValue(reply(200, {}))
-    await api.setQuestion('Q?', true)
-    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ question: 'Q?', reset: true })
+    await api.setQuestion('Q?')
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ question: 'Q?', reset: false, keep_papers: false })
+    await api.setQuestion('Q?', { keepPapers: true })
+    expect(JSON.parse(spy.mock.calls[1][1].body)).toEqual({ question: 'Q?', reset: false, keep_papers: true })
+    await api.setQuestion('Q?', { reset: true })
+    expect(JSON.parse(spy.mock.calls[2][1].body)).toEqual({ question: 'Q?', reset: true, keep_papers: false })
+  })
+
+  it('asks Gemini for a proposal with the earlier suggestions', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockReturnValue(reply(200, { proposal: { question: 'Q?' } }))
+    await api.proposeQuestion('my interest', ['Old?'])
+    expect(spy.mock.calls[0][0]).toBe('/api/question/propose')
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ interest: 'my interest', previous: ['Old?'] })
   })
 
   it('treats a missing impact as null', async () => {

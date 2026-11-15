@@ -469,7 +469,7 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
             "id": m["id"], "session_id": m["session_id"], "role": m["role"],
             "content": strip_inline_citations(m["content"]) if m["role"] == "assistant" else m["content"],
             "context": m.get("context"), "insufficient_evidence": m["insufficient_evidence"],
-            "guardrail": m.get("guardrail"), "created_at": m["created_at"].isoformat() if m.get("created_at") else None,
+            "guardrail": m.get("guardrail"), "question": m.get("question"), "created_at": m["created_at"].isoformat() if m.get("created_at") else None,
             "cited": cited,
             "references": resolve_references(m["content"], node_refs, rels, set(papers)) if m["role"] == "assistant" else {},
         })
@@ -490,7 +490,8 @@ def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
     text = check_message(message)
     ctx_item = check_context(context)
     with db.connect() as conn:
-        earlier = db.chat_messages(conn, sid, limit=HISTORY_TURNS)
+        # Only turns asked under the current question reach the model (a changed question is a new frame).
+        earlier = db.chat_messages(conn, sid, limit=HISTORY_TURNS, question=question)
         try:
             ctx = gather_context(conn, llm, text, ctx_item)
         except Exception as exc:  # embedding call failed
@@ -506,8 +507,10 @@ def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
     if result["guardrail"]:
         log.warning("chat answer withheld (%s)", result["guardrail"])
     with db.connect() as conn:
-        user_row = db.insert_chat_message(conn, {"session_id": sid, "role": "user", "content": text, "context": ctx_item})
-        bot_row = db.insert_chat_message(conn, {"session_id": sid, "role": "assistant", "context": ctx_item, **result})
+        user_row = db.insert_chat_message(conn, {"session_id": sid, "role": "user", "content": text, "context": ctx_item,
+                                                 "question": question})
+        bot_row = db.insert_chat_message(conn, {"session_id": sid, "role": "assistant", "context": ctx_item,
+                                                "question": question, **result})
         user_msg, bot_msg = message_payloads(conn, [user_row, bot_row])
     retrieved = {"claims": [c["id"] for c in ctx["claims"]], "relationships": [r["id"] for r in ctx["relationships"]],
                  "impacts": len(ctx["impacts"])}

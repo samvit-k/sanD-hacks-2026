@@ -23,7 +23,8 @@ def _short(text: str, n: int = 70) -> str:
 def paper_detail(p: Dict) -> Dict:
     return {"id": p["id"], "title": p["title"], "doi": p.get("doi"), "url": p.get("url"), "year": p.get("year"),
             "access_level": p.get("access_level", "full"), "license": p.get("license"),
-            "is_new": bool(p.get("is_new")), "relevance": p.get("relevance")}
+            "is_new": bool(p.get("is_new")), "relevance": p.get("relevance"),
+            "analysis_status": p.get("analysis_status") or "complete"}
 
 
 def claim_detail(c: Dict, papers: Dict[str, Dict], sentences: Dict[str, Dict]) -> Dict:

@@ -19,12 +19,12 @@ from .contracts import ExtractionResult, ImpactJudgment, PairJudgment
 from .extract import build_extraction_prompt, validate_claims
 from .graph import build_graph, build_impact_summary, paper_detail, ref_order
 from .llm import LLM, QuotaExhaustedError
+from .question import MAX_QUESTION_LEN, normalize_question  # noqa: F401  (re-exported)
 
 log = logging.getLogger(__name__)
 
 FAILED_PAIR = "The comparison could not be completed (model error), so no judgment is shown."
 FAILED_IMPACT = "The impact assessment could not be completed (model error), so no judgment is shown."
-MAX_QUESTION_LEN = 300
 
 
 class NoQuestionError(RuntimeError):
@@ -49,24 +49,28 @@ class ModelUnavailableError(RuntimeError):
 
 
 class QuestionConflict(RuntimeError):
-    """Changing the question would mix analyses; requires an explicit reset."""
+    """Changing the question would mix analyses; requires an explicit, user-confirmed choice."""
 
     def __init__(self, current: Optional[str], counts: Dict):
-        super().__init__("Existing analysis was produced under a different research question. "
-                         "Resend with reset=true to delete it and start a new evidence graph.")
+        super().__init__("Existing analysis was produced under a different research question and is not "
+                         "reinterpreted. Resend with keep_papers=true to keep the papers and clear their "
+                         "analysis for re-analysis, or reset=true to delete everything.")
         self.current, self.counts = current, counts
 
 
+class PendingAnalysisError(RuntimeError):
+    """Papers are waiting to be re-analyzed under the current question; finish that first."""
+
+
+class AnalysisOrderError(RuntimeError):
+    """An evaluated paper's impact needs the re-analyzed library; analyze library papers first."""
+
+
+class AlreadyAnalyzedError(RuntimeError):
+    """The paper already has its analysis under the current question."""
+
+
 # ---------- workspace: the single active research question ----------
-def normalize_question(question: Optional[str]) -> str:
-    q = " ".join((question or "").split())
-    if not q:
-        raise ValueError("The research question must not be empty.")
-    if len(q) > MAX_QUESTION_LEN:
-        raise ValueError(f"The research question must be at most {MAX_QUESTION_LEN} characters.")
-    return q
-
-
 def current_question() -> Optional[str]:
     """Stored workspace question, else the optional .env default, else None."""
     with db.connect() as conn:
@@ -85,36 +89,49 @@ def workspace_state() -> Dict:
     with db.connect() as conn:
         stored = db.get_question(conn)
         counts = db.analysis_counts(conn)
+        pending = db.pending_papers(conn)
     question = stored or settings.research_question
     return {"question": question,
             "source": "workspace" if stored else ("default" if question else None),
             "is_default": not stored and bool(question),
             "counts": counts,
-            "has_library": counts["library_claims"] > 0}
+            "has_library": counts["library_claims"] > 0,
+            "pending_papers": [{"id": p["id"], "title": p["title"], "is_new": bool(p["is_new"]),
+                                "status": p["analysis_status"]} for p in pending]}
 
 
-def set_workspace_question(question: str, reset: bool = False) -> Dict:
-    """Set the active research question.
+def set_workspace_question(question: str, reset: bool = False, keep_papers: bool = False) -> Dict:
+    """Set the active research question. Only called after the user confirmed the question in the UI.
 
-    - Same question as the current one: no-op for the analysis (never deletes, even with reset=True).
-    - Different question, no existing analysis: just stores it.
-    - Different question, existing analysis: raises QuestionConflict unless reset=True, in which case the
-      analysis is deleted and the new question stored in ONE transaction (all-or-nothing).
+    - Same question as the current one: no-op for the analysis (never deletes, whatever the flags).
+    - Different question, no stored papers: just stores it.
+    - Different question, stored papers: raises QuestionConflict (nothing changes) unless the caller made an
+      explicit choice, applied with the new question in ONE transaction (all-or-nothing):
+        keep_papers=True  keep papers + sentences + node numbers + chat; clear claims/relationships/impacts;
+                          papers become 'pending' and are re-analyzed only when the user asks
+                          (POST /api/papers/{id}/analyze). Results are never reinterpreted silently.
+        reset=True        delete everything (papers included) and start a new evidence graph.
     """
     q = normalize_question(question)
-    did_reset = False
+    if reset and keep_papers:
+        raise ValueError("Choose either keep_papers or reset, not both.")
+    did_reset, cleared = False, 0
     with db.connect() as conn:  # commits on success; any error rolls back the delete and the update
         stored = db.get_question(conn)
         current = stored or settings.research_question
         counts = db.analysis_counts(conn)
         changed = q != current
         if changed and counts["papers"] > 0:
-            if not reset:
+            if keep_papers:
+                cleared = db.clear_analysis(conn)
+            elif reset:
+                db.delete_all(conn)
+                did_reset = True
+            else:
                 raise QuestionConflict(current, counts)
-            db.delete_all(conn)
-            did_reset = True
         db.set_question(conn, q)
-    return {**workspace_state(), "reset": did_reset}
+    return {**workspace_state(), "reset": did_reset, "analysis_cleared": cleared > 0, "previous_question": current,
+            "changed": changed}
 
 
 def _parallel(fn: Callable, items: Sequence) -> List:
@@ -322,6 +339,10 @@ def _check_upload(pdf_bytes: bytes, question: Optional[str], replace: bool = Fal
     """Fail before storing anything: no question, a PDF that is already stored (unless the caller
     explicitly asked to replace it — only the seed CLI does), or no extractable text."""
     question = question or active_question()
+    with db.connect() as conn:
+        if db.analysis_counts(conn)["pending_papers"]:
+            raise PendingAnalysisError("Some papers are waiting to be re-analyzed under the current research "
+                                       "question. Re-analyze them before adding new papers.")
     if not replace:
         with db.connect() as conn:
             existing = db.paper_by_content(conn, content_sha256(pdf_bytes), hashlib.sha1(pdf_bytes).hexdigest()[:6])
@@ -386,6 +407,46 @@ def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
     summary["mode"] = "evaluate"
     summary["question"] = question
     return summary
+
+
+def analyze_stored_paper(llm: LLM, paper_id: str, question: Optional[str] = None) -> Dict:
+    """Deliberate re-analysis (user-triggered) of a stored paper under the current question: extraction from
+    its stored sentences, comparison with already-analyzed claims, and impact for evaluated papers.
+    The paper and its sentences are never deleted; if Gemini fails it simply returns to 'pending'."""
+    question = question or active_question()
+    with db.connect() as conn:
+        paper = db.get_paper(conn, paper_id)
+        if not paper:
+            raise KeyError(paper_id)
+        if paper["analysis_status"] == "complete":
+            raise AlreadyAnalyzedError(f'"{paper["title"]}" is already analyzed under the current question.')
+        if paper["is_new"]:
+            if any(not p["is_new"] for p in db.pending_papers(conn)):
+                raise AnalysisOrderError("Re-analyze the library papers first: an evaluated paper's impact is "
+                                         "assessed against the library.")
+            if db.analysis_counts(conn)["library_claims"] == 0:
+                raise NoLibraryError("There is no analyzed library to evaluate this paper against.")
+        db.delete_claims_for_paper(conn, paper_id)  # leftovers of an interrupted run
+        db.set_analysis_status(conn, paper_id, "processing")
+    t0 = time.time()
+    try:
+        claim_ids, report = extract_claims(llm, paper_id, question)
+    except Exception as exc:
+        with db.connect() as conn:
+            db.delete_claims_for_paper(conn, paper_id)
+            db.set_analysis_status(conn, paper_id, "pending")
+        reason = str(exc) if isinstance(exc, QuotaExhaustedError) else type(exc).__name__
+        raise ModelUnavailableError(f"Gemini was unavailable during claim extraction ({reason}). The paper is "
+                                    "kept and still awaits re-analysis; please try again.") from exc
+    rel_ids = compare_claims(llm, claim_ids, question)
+    impacts = assess_impact(llm, paper_id, question) if paper["is_new"] else 0
+    with db.connect() as conn:
+        db.set_analysis_status(conn, paper_id, "complete")
+        paper = db.get_paper(conn, paper_id)
+        remaining = len(db.pending_papers(conn))
+    return {"paper": paper_detail(paper), "question": question, "claims_kept": len(claim_ids), "extraction": report,
+            "relationships_created": len(rel_ids), "impacts_assessed": impacts, "pending_remaining": remaining,
+            "timings_s": {"total": round(time.time() - t0, 1)}}
 
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

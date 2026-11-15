@@ -54,6 +54,14 @@ class ImpactJudgment(BaseModel):
     cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
 
 
+class QuestionProposal(BaseModel):
+    question: str = Field(description="ONE focused, neutral central research question ending with '?'. "
+                                      "It asks; it never states or implies a finding.")
+    rationale: str = Field(description="One sentence on how the question focuses the user's interest (what is "
+                                       "compared, for whom, which outcome). Mention no study, author, year, "
+                                       "statistic or result.")
+
+
 class ChatAnswer(BaseModel):
     answer: str = Field(description="Answer grounded ONLY in the provided evidence. Refer to graph items with "
                                     "tokens exactly as given, e.g. [[claim:12]], [[paper:abc-123456]], [[rel:5]], [[q]]")
