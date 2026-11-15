@@ -4,9 +4,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parents[2]
-BACKEND = ROOT / "backend"
-load_dotenv(ROOT / ".env")
+# The backend directory is located from this file, not from the repository root: on Vercel the backend service is
+# deployed with backend/ as its root, so schema.sql and fixtures must be found relative to the code itself.
+BACKEND = Path(__file__).resolve().parents[1]
+ROOT = BACKEND.parent
+load_dotenv(ROOT / ".env")  # local development only; on Vercel the variables come from the project settings
 
 
 class Settings:
