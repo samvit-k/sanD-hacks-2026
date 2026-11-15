@@ -9,6 +9,7 @@ from app.contracts import ChatAnswer
 
 from .fake_llm import FakeLLM
 from .test_pipeline import PAPERS, pdf, seed
+from .conftest import SESSION_HEADERS  # noqa: E402
 
 SHOWN = {
     "paper-a:p1_s3": "Tutor students' test scores rose 25 percent after 12 weeks.",
@@ -123,7 +124,7 @@ def client(clean_db, monkeypatch):
     llm_mod.set_llm(fake)
     seed(fake)
     pipeline.graph_payload()  # assigns node numbers, as the UI would
-    yield TestClient(main.app), fake
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake
     llm_mod.set_llm(None)
 
 
@@ -167,13 +168,13 @@ def test_withheld_answer_is_stored_without_citations(client):
     assert "benefits students" not in bot["content"]
 
 
-def test_sessions_are_isolated(client):
+def test_session_id_echo_must_match_the_header(client):
+    """Isolation itself is per session schema (tests/test_sessions.py); a body/query session_id is only an echo."""
     c, _ = client
-    c.post("/api/chat", json={"message": "Do tutors help?", "session_id": "alpha"})
-    assert c.get("/api/chat/messages", params={"session_id": "beta"}).json()["messages"] == []
-    assert len(c.get("/api/chat/messages", params={"session_id": "alpha"}).json()["messages"]) == 2
-    assert c.get("/api/chat/messages").json()["messages"] == []
-    assert c.get("/api/chat/messages", params={"session_id": "Bad Id"}).status_code == 422
+    assert c.post("/api/chat", json={"message": "Do tutors help?", "session_id": "aaaaaaaaaaaa"}).status_code == 422
+    assert c.get("/api/chat/messages", params={"session_id": "aaaaaaaaaaaa"}).status_code == 422
+    assert c.post("/api/chat", json={"message": "Do tutors help?", "session_id": SESSION_HEADERS["X-Session-Id"]}).status_code == 200
+    assert len(c.get("/api/chat/messages").json()["messages"]) == 2
 
 
 def test_model_outage_stores_nothing(client):

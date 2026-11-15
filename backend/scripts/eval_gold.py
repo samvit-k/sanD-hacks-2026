@@ -23,6 +23,15 @@ def find_claim(claims, ref):
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--session", required=True, help="research session id (GET /api/sessions)")
+    args = ap.parse_args()
+    with db.use_session(db.get_session(args.session)["id"]):
+        _evaluate()
+
+
+def _evaluate() -> None:
     gold = json.loads(GOLD.read_text())
     with db.connect() as conn:
         claims = db.all_claims(conn)

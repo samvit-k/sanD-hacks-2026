@@ -60,7 +60,8 @@ def seed(llm: LLM, manifest_path: Path = MANIFEST, reset: bool = False, refresh:
          reextract: Iterable[str] = (), out=print, question: Optional[str] = None) -> dict:
     db.init_schema()
     manifest = json.loads(Path(manifest_path).read_text())
-    question = resolve_question(question or manifest.get("question"), reset, out)
+    # The .env RESEARCH_QUESTION is only a CLI default; it is stored explicitly in the session, never implied.
+    question = resolve_question(question or manifest.get("question") or settings.research_question, reset, out)
     out(f"research question: {question}")
     reextract = set(reextract)
     unknown = reextract - {p["id"] for p in manifest["papers"]}
@@ -134,11 +135,36 @@ def main(argv=None) -> int:
     ap.add_argument("--question", help="research question (overrides the manifest's \"question\")")
     ap.add_argument("--new", help="path to a new paper PDF to evaluate")
     ap.add_argument("--title", help="title for --new")
+    ap.add_argument("--session", help="research session id to operate on (see GET /api/sessions)")
+    ap.add_argument("--new-session", metavar="TITLE", help="create a new research session and operate on it")
     args = ap.parse_args(argv)
     if args.init:
         db.init_schema()
         print("schema applied")
         return 0
+    if args.session and args.new_session:
+        print("Pass either --session or --new-session, not both.")
+        return 2
+    if args.new_session:
+        db.init_schema()
+        sid = db.create_session(args.new_session)["id"]
+        print(f"created research session {sid}")
+    elif args.session:
+        try:
+            sid = db.get_session(args.session)["id"]
+        except (ValueError, db.SessionNotFound):
+            print(f"Unknown research session: {args.session!r}")
+            return 2
+    elif db.current_session():
+        sid = db.current_session()  # an in-process caller already bound a session explicitly
+    else:
+        print("Choose a research session: --session ID (see GET /api/sessions) or --new-session TITLE.")
+        return 2
+    with db.use_session(sid):
+        return _run(args)
+
+
+def _run(args) -> int:
     if args.reset and not args.yes:
         print("--reset deletes ALL papers, claims, relationships, impacts and uploaded papers. "
               "Re-run with --reset --yes to confirm.")

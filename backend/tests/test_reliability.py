@@ -9,6 +9,7 @@ from app.llm import GeminiLLM, QuotaExhaustedError, quota_retry_delay
 
 from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, PAPERS, pdf
+from .conftest import SESSION_HEADERS  # noqa: E402
 
 # Shape of the real 429 seen in the live smoke test (trimmed).
 DAILY_QUOTA = ("429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota ...', "
@@ -90,7 +91,7 @@ def api(clean_db, monkeypatch):
     monkeypatch.setattr(settings, "sim_threshold", 0.2)
     pipeline._question_vecs.clear()
     llm_mod.set_llm(FakeLLM())
-    yield TestClient(main.app)
+    yield TestClient(main.app, headers=SESSION_HEADERS)
     llm_mod.set_llm(None)
 
 

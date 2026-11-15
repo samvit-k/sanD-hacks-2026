@@ -1,6 +1,7 @@
--- ResearchLens schema (Tiger Data: PostgreSQL + pgvector).
--- Idempotent and non-destructive: safe to re-run on an initialized database (never drops data).
-CREATE EXTENSION IF NOT EXISTS vector;
+-- ResearchLens PER-SESSION schema (Tiger Data: PostgreSQL + pgvector).
+-- Every research session owns one PostgreSQL schema ("rl_<session id>") containing these tables; db.py runs
+-- this file with search_path = rl_<id>, public. Shared objects (vector extension, session registry, discovery
+-- cache) live in schema_public.sql. Idempotent and non-destructive: safe to re-run (never drops data).
 
 -- The single active research question (MVP: one at a time). The id CHECK allows only one row.
 -- All claims, relationships and impacts in the database were analyzed under this question.
@@ -93,14 +94,7 @@ CREATE TABLE IF NOT EXISTS impacts (
     UNIQUE (new_claim_id, prior_claim_id)
 );
 
--- One cached result set per (source, normalized query), shared by every paper that asks the same query.
-CREATE TABLE IF NOT EXISTS discovery_cache (
-    query_hash   text PRIMARY KEY,   -- sha256(source + normalized query)
-    query        text NOT NULL,
-    source       text NOT NULL CHECK (source IN ('brightdata', 'openalex')),
-    results      jsonb NOT NULL,
-    created_at   timestamptz NOT NULL DEFAULT now()
-);
+-- discovery_cache is shared (public schema): search results keyed by query, not research data.
 
 -- Stable display numbers for graph nodes ("Node N"). Append-only: a number is assigned once, the
 -- first time a node appears in the graph, and is never reassigned or reused (new papers/claims get
@@ -133,7 +127,7 @@ ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS question text;
 -- re-assigns another paper's discovery results.
 CREATE TABLE IF NOT EXISTS discovery_links (
     paper_id     text NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
-    query_hash   text NOT NULL REFERENCES discovery_cache(query_hash) ON DELETE CASCADE,
+    query_hash   text NOT NULL REFERENCES public.discovery_cache(query_hash) ON DELETE CASCADE,
     requested_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (paper_id, query_hash)
 );

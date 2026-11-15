@@ -126,7 +126,7 @@ def test_propose_returns_a_question_and_writes_nothing(api):
     assert body["interest"] == INTEREST and body["source"] == "gemini" and body["saved"] is False
     assert body["proposal"]["question"].startswith("How does AI-assisted tutoring") and body["proposal"]["rationale"]
     assert fake.temperatures[-1] == questions.PROPOSAL_TEMPERATURE
-    assert stored_question() is None and c.get("/api/workspace").json() == before  # never auto-finalized
+    assert stored_question() == DEFAULT_TEST_QUESTION and c.get("/api/workspace").json() == before  # never auto-finalized
 
 
 def test_regenerate_sends_previous_suggestions_and_gets_a_different_one(api):
@@ -135,7 +135,7 @@ def test_regenerate_sends_previous_suggestions_and_gets_a_different_one(api):
     second = c.post("/api/question/propose", json={"interest": INTEREST, "previous": [first]}).json()
     assert second["proposal"]["question"] != first
     assert "Already suggested" in fake.prompts[-1] and first in fake.prompts[-1]
-    assert stored_question() is None
+    assert stored_question() == DEFAULT_TEST_QUESTION
 
 
 def test_rule_breaking_suggestion_is_retried_once_then_reported(api):
@@ -151,7 +151,7 @@ def test_rule_breaking_suggestion_is_retried_once_then_reported(api):
     r = c.post("/api/question/propose", json={"interest": INTEREST, "previous": [NEW_Q]})
     assert r.status_code == 502 and r.json()["detail"]["code"] == "proposal_rejected"
     assert len(fake.prompts) - calls == questions.MAX_ATTEMPTS  # bounded paid calls
-    assert stored_question() is None
+    assert stored_question() == DEFAULT_TEST_QUESTION
 
 
 def test_gemini_failure_is_a_clear_error_and_nothing_is_saved(api):
@@ -160,7 +160,7 @@ def test_gemini_failure_is_a_clear_error_and_nothing_is_saved(api):
     r = c.post("/api/question/propose", json={"interest": INTEREST})
     assert r.status_code == 503 and r.json()["detail"]["code"] == "model_unavailable"
     assert "write the question yourself" in r.json()["detail"]["message"]
-    assert stored_question() is None
+    assert stored_question() == DEFAULT_TEST_QUESTION
 
 
 def test_propose_validates_the_interest(api):
@@ -198,11 +198,11 @@ def test_question_change_needs_an_explicit_choice_and_reset_is_destructive_only_
     assert d["code"] == "question_conflict" and set(d["options"]) == {"keep_papers", "reset"}
     assert d["current_question"] == DEFAULT_TEST_QUESTION and d["counts"]["claims"] == n["claims"]
     assert c.put("/api/workspace", json={"question": NEW_Q, "reset": True, "keep_papers": True}).status_code == 422
-    assert snapshot() == before and counts() == n and stored_question() is None
+    assert snapshot() == before and counts() == n and stored_question() == DEFAULT_TEST_QUESTION
 
     # 6. Proposals never reset or change anything, even for a project with data.
     assert c.post("/api/question/propose", json={"interest": INTEREST}).status_code == 200
-    assert snapshot() == before and counts() == n and stored_question() is None
+    assert snapshot() == before and counts() == n and stored_question() == DEFAULT_TEST_QUESTION
 
     # 3-5. Explicit reset: everything derived from the old project is cleared and the new question saved.
     r = c.put("/api/workspace", json={"question": NEW_Q, "reset": True})

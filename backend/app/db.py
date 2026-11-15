@@ -1,18 +1,49 @@
-"""Tiger Data (PostgreSQL + pgvector) access. Plain SQL, one short connection per step."""
+"""Tiger Data (PostgreSQL + pgvector) access. Plain SQL, one short connection per step.
+
+Session isolation (Stage D): every research session owns a PostgreSQL schema "rl_<id>" holding its own copy of
+the research tables (schema.sql). `connect()` only works inside `use_session(id)` and pins the connection's
+search_path to that schema (+ public for the vector type and the shared discovery cache). There is no default
+session: a connection without a session raises NoSessionError. Registry operations use `connect_registry()`.
+"""
+import contextvars
+import re
+import secrets
 from contextlib import contextmanager
 from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .config import BACKEND, settings
 
+SESSION_ID_RE = re.compile(r"^[a-f0-9]{12}$")
+# Tables owned by a session (moved out of public by the one-time legacy migration, see app/migrate.py).
+SESSION_TABLES = ("workspace", "papers", "sentences", "claims", "relationships", "impacts", "discovery_links",
+                  "node_refs", "chat_messages")
+AUTO_TITLE = "Untitled research"
+MAX_TITLE_LEN = 120
+
+_session: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("researchlens_session", default=None)
+
 
 class DatabaseNotConfigured(RuntimeError):
     pass
+
+
+class NoSessionError(RuntimeError):
+    """A research-data query was attempted without a verified session. Never falls back to a default."""
+
+
+class SessionNotFound(LookupError):
+    pass
+
+
+class LegacyLayoutError(RuntimeError):
+    """Research tables still live in the public schema: run the one-time migration (python -m app.migrate)."""
 
 
 def _url() -> str:
@@ -21,16 +52,40 @@ def _url() -> str:
     return settings.database_url
 
 
-def init_schema() -> None:
-    with psycopg.connect(_url(), autocommit=True) as conn:
-        conn.execute((BACKEND / "schema.sql").read_text())
+def check_session_id(session_id: Optional[str]) -> str:
+    sid = (session_id or "").strip()
+    if not SESSION_ID_RE.match(sid):
+        raise ValueError("Invalid research session id.")
+    return sid
+
+
+def schema_for(session_id: str) -> str:
+    return f"rl_{check_session_id(session_id)}"
+
+
+def current_session() -> Optional[str]:
+    schema = _session.get()
+    return schema[3:] if schema else None
 
 
 @contextmanager
-def connect():
-    conn = psycopg.connect(_url(), row_factory=dict_row)
+def use_session(session_id: str):
+    """Bind research-data access in this context (thread / request) to one session."""
+    token = _session.set(schema_for(session_id))
     try:
-        register_vector(conn)
+        yield session_id
+    finally:
+        _session.reset(token)
+
+
+def _open():
+    conn = psycopg.connect(_url(), row_factory=dict_row)
+    return conn
+
+
+@contextmanager
+def _transaction(conn):
+    try:
         yield conn
         conn.commit()
     except Exception:
@@ -38,6 +93,160 @@ def connect():
         raise
     finally:
         conn.close()
+
+
+@contextmanager
+def connect():
+    """Connection scoped to the current session's schema (see use_session)."""
+    schema = _session.get()
+    if not schema:
+        raise NoSessionError("No research session selected for this operation.")
+    conn = _open()
+    with _transaction(conn):
+        exists = conn.execute("SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema,)).fetchone()
+        if not exists:
+            raise SessionNotFound(schema[3:])
+        conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+        register_vector(conn)
+        yield conn
+
+
+@contextmanager
+def connect_registry():
+    """Connection for the shared registry (public schema only; no research tables are visible here)."""
+    conn = _open()
+    with _transaction(conn):
+        conn.execute("SET search_path TO public")
+        yield conn
+
+
+def legacy_tables(conn) -> List[str]:
+    rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+                        "AND table_name = ANY(%s)", (list(SESSION_TABLES),)).fetchall()
+    return sorted(r["table_name"] for r in rows)
+
+
+def _apply_session_ddl(conn, schema: str) -> None:
+    conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+    conn.execute((BACKEND / "schema.sql").read_text())
+    conn.execute("SET search_path TO public")
+
+
+def init_schema() -> None:
+    """Apply the shared DDL, then (idempotently) the per-session DDL to every registered session.
+    Refuses to run while research tables still live in public (pre-Stage-D layout): migrate first."""
+    with psycopg.connect(_url(), autocommit=True, row_factory=dict_row) as conn:
+        if legacy_tables(conn):
+            raise LegacyLayoutError("This database still has research tables in the public schema "
+                                    f"({', '.join(legacy_tables(conn))}). Run `python -m app.migrate` first.")
+        conn.execute((BACKEND / "schema_public.sql").read_text())
+        for row in conn.execute("SELECT schema_name FROM public.sessions").fetchall():
+            _apply_session_ddl(conn, row["schema_name"])
+
+
+# ---------- session registry ----------
+def auto_title(question: Optional[str]) -> str:
+    q = " ".join((question or "").split()).rstrip("?").strip()
+    if not q:
+        return AUTO_TITLE
+    if len(q) <= 60:
+        return q
+    cut = q[:57].rsplit(" ", 1)[0]
+    return f"{cut}…"
+
+
+def clean_title(title: Optional[str]) -> str:
+    t = " ".join((title or "").split())
+    if not t:
+        raise ValueError("The session title must not be empty.")
+    if len(t) > MAX_TITLE_LEN:
+        raise ValueError(f"The session title must be at most {MAX_TITLE_LEN} characters.")
+    return t
+
+
+def create_session(title: Optional[str] = None, session_id: Optional[str] = None) -> Dict:
+    """New, empty research session: registry row + its own schema with all research tables (one transaction)."""
+    sid = check_session_id(session_id) if session_id else secrets.token_hex(6)
+    manual = bool(title and title.strip())
+    with connect_registry() as conn:
+        row = conn.execute(
+            "INSERT INTO public.sessions (id, schema_name, title, title_source) VALUES (%s, %s, %s, %s) RETURNING *",
+            (sid, schema_for(sid), clean_title(title) if manual else AUTO_TITLE, "manual" if manual else "auto"),
+        ).fetchone()
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_for(sid))))
+        _apply_session_ddl(conn, schema_for(sid))
+    return row
+
+
+def get_session(session_id: str) -> Dict:
+    sid = check_session_id(session_id)
+    with connect_registry() as conn:
+        row = conn.execute("SELECT * FROM public.sessions WHERE id = %s", (sid,)).fetchone()
+    if not row:
+        raise SessionNotFound(sid)
+    return row
+
+
+def list_sessions() -> List[Dict]:
+    with connect_registry() as conn:
+        return conn.execute("SELECT * FROM public.sessions ORDER BY updated_at DESC, created_at DESC").fetchall()
+
+
+def rename_session(session_id: str, title: Optional[str]) -> Dict:
+    """A manual title is never changed automatically again. title=None reverts to the automatic title."""
+    sid = check_session_id(session_id)
+    new_title = None if title is None else clean_title(title)
+    with connect_registry() as conn:
+        if not conn.execute("SELECT 1 FROM public.sessions WHERE id = %s FOR UPDATE", (sid,)).fetchone():
+            raise SessionNotFound(sid)
+        if new_title is None:
+            q = conn.execute(sql.SQL("SELECT question FROM {}.workspace WHERE id = 1").format(
+                sql.Identifier(schema_for(sid)))).fetchone()
+            row = conn.execute("UPDATE public.sessions SET title = %s, title_source = 'auto', updated_at = now() "
+                               "WHERE id = %s RETURNING *", (auto_title(q and q["question"]), sid)).fetchone()
+        else:
+            row = conn.execute("UPDATE public.sessions SET title = %s, title_source = 'manual', updated_at = now() "
+                               "WHERE id = %s RETURNING *", (new_title, sid)).fetchone()
+    if not row:
+        raise SessionNotFound(sid)
+    return row
+
+
+def apply_auto_title(session_id: str, question: Optional[str]) -> None:
+    """Follow the confirmed question unless the user named the session themselves."""
+    with connect_registry() as conn:
+        conn.execute("UPDATE public.sessions SET title = %s, updated_at = now() "
+                     "WHERE id = %s AND title_source = 'auto'", (auto_title(question), check_session_id(session_id)))
+
+
+def touch_session(session_id: str) -> None:
+    with connect_registry() as conn:
+        conn.execute("UPDATE public.sessions SET updated_at = now() WHERE id = %s", (check_session_id(session_id),))
+
+
+def delete_session(session_id: str) -> None:
+    """Permanently drop the session's schema (all its research data) and its registry row, in one transaction.
+    Other sessions are untouched: their data lives in other schemas."""
+    sid = check_session_id(session_id)
+    with connect_registry() as conn:
+        row = conn.execute("DELETE FROM public.sessions WHERE id = %s RETURNING schema_name", (sid,)).fetchone()
+        if not row:
+            raise SessionNotFound(sid)
+        conn.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(row["schema_name"])))
+
+
+def session_summary(conn, schema: str) -> Dict:
+    """Question and counts of one session, read with fully qualified names (registry connection)."""
+    q = sql.Identifier(schema)
+    row = conn.execute(sql.SQL(
+        """SELECT (SELECT question FROM {s}.workspace WHERE id = 1) AS question,
+                  (SELECT count(*) FROM {s}.papers) AS papers,
+                  (SELECT count(*) FROM {s}.claims) AS claims,
+                  (SELECT count(*) FROM {s}.relationships) AS relationships,
+                  (SELECT count(*) FROM {s}.papers WHERE analysis_status = 'pending') AS pending_papers,
+                  (SELECT count(*) FROM {s}.chat_messages) AS chat_messages""").format(s=q)).fetchone()
+    return {"question": row["question"], "counts": {k: int(row[k]) for k in
+                                                     ("papers", "claims", "relationships", "pending_papers", "chat_messages")}}
 
 
 # ---------- papers & sentences ----------
@@ -93,13 +302,14 @@ def insert_chat_message(conn, m: Dict) -> Dict:
 
 
 def chat_messages(conn, session_id: str, limit: int = 200, question: Optional[str] = None) -> List[Dict]:
-    """A session's messages, oldest first. With `question`, only messages written under that question."""
+    """The session's messages, oldest first. With `question`, only messages written under that question.
+    The table lives in the session's own schema, so every row belongs to this session; `session_id` is not used
+    as a filter (rows migrated from the single-workspace layout carry the label 'default')."""
     if question is None:
-        rows = conn.execute("SELECT * FROM chat_messages WHERE session_id = %s ORDER BY id DESC LIMIT %s",
-                            (session_id, limit)).fetchall()
+        rows = conn.execute("SELECT * FROM chat_messages ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM chat_messages WHERE session_id = %s AND question = %s "
-                            "ORDER BY id DESC LIMIT %s", (session_id, question, limit)).fetchall()
+        rows = conn.execute("SELECT * FROM chat_messages WHERE question = %s ORDER BY id DESC LIMIT %s",
+                            (question, limit)).fetchall()
     return list(reversed(rows))
 
 

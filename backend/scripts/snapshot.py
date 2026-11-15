@@ -25,7 +25,13 @@ def write(name: str, data: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["before", "after"], required=True)
+    ap.add_argument("--session", required=True, help="research session id (GET /api/sessions)")
     args = ap.parse_args()
+    with db.use_session(db.get_session(args.session)["id"]):
+        _snapshot(args)
+
+
+def _snapshot(args) -> None:
     with db.connect() as conn:
         v = db.integrity_violations(conn)
         latest = db.latest_new_paper(conn)

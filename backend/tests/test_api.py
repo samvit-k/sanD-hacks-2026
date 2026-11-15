@@ -10,6 +10,7 @@ from app.config import settings
 
 from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, pdf, seed
+from .conftest import SESSION_HEADERS  # noqa: E402
 
 
 @pytest.fixture
@@ -19,7 +20,7 @@ def client(clean_db, monkeypatch):
     pipeline._question_vecs.clear()
     fake = FakeLLM()
     llm_mod.set_llm(fake)
-    yield TestClient(main.app), fake
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake
     llm_mod.set_llm(None)
 
 

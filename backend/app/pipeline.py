@@ -72,10 +72,10 @@ class AlreadyAnalyzedError(RuntimeError):
 
 # ---------- workspace: the single active research question ----------
 def current_question() -> Optional[str]:
-    """Stored workspace question, else the optional .env default, else None."""
+    """The current session's confirmed question, or None. (Stage D: the optional .env RESEARCH_QUESTION is never
+    applied to a session implicitly — it is only a default for the seed CLI, which stores it explicitly.)"""
     with db.connect() as conn:
-        stored = db.get_question(conn)
-    return stored or settings.research_question
+        return db.get_question(conn)
 
 
 def active_question() -> str:
@@ -90,10 +90,9 @@ def workspace_state() -> Dict:
         stored = db.get_question(conn)
         counts = db.analysis_counts(conn)
         pending = db.pending_papers(conn)
-    question = stored or settings.research_question
-    return {"question": question,
-            "source": "workspace" if stored else ("default" if question else None),
-            "is_default": not stored and bool(question),
+    return {"question": stored,
+            "source": "workspace" if stored else None,
+            "is_default": False,
             "counts": counts,
             "has_library": counts["library_claims"] > 0,
             "pending_papers": [{"id": p["id"], "title": p["title"], "is_new": bool(p["is_new"]),
@@ -118,7 +117,7 @@ def set_workspace_question(question: str, reset: bool = False, keep_papers: bool
     did_reset, cleared = False, 0
     with db.connect() as conn:  # commits on success; any error rolls back the delete and the update
         stored = db.get_question(conn)
-        current = stored or settings.research_question
+        current = stored
         counts = db.analysis_counts(conn)
         changed = q != current
         if changed and counts["papers"] > 0:

@@ -11,10 +11,11 @@ from app import llm as llm_mod
 from app import main
 from app.config import settings
 
-from .conftest import DEFAULT_TEST_QUESTION
+from .conftest import DEFAULT_TEST_QUESTION, clear_question
 from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, PAPERS, pdf
 from .test_seed import manifest  # noqa: F401  (fixture)
+from .conftest import SESSION_HEADERS  # noqa: E402
 
 USER_Q = "Does spaced repetition improve vocabulary retention?"
 EXTRACT, PAIR, IMPACT = "You are extracting testable", "You are verifying the relationship", "added a NEW paper"
@@ -27,7 +28,7 @@ def api(clean_db, monkeypatch):
     pipeline._question_vecs.clear()
     fake = FakeLLM()
     llm_mod.set_llm(fake)
-    yield TestClient(main.app), fake
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake
     llm_mod.set_llm(None)
 
 
@@ -48,10 +49,10 @@ def counts():
 
 
 # ---------- GET / PUT /api/workspace ----------
-def test_workspace_reports_default_then_user_question(api):
+def test_workspace_reports_stored_then_user_question(api):
     c, _ = api
     w = c.get("/api/workspace").json()
-    assert w["question"] == DEFAULT_TEST_QUESTION and w["source"] == "default" and w["is_default"]
+    assert w["question"] == DEFAULT_TEST_QUESTION and w["source"] == "workspace" and not w["is_default"]
     assert w["has_library"] is False and w["counts"]["papers"] == 0
     r = c.put("/api/workspace", json={"question": f"  {USER_Q}  "})
     assert r.status_code == 200 and r.json()["question"] == USER_Q and r.json()["reset"] is False
@@ -62,7 +63,7 @@ def test_workspace_reports_default_then_user_question(api):
 
 def test_no_question_anywhere(api, monkeypatch):
     c, _ = api
-    monkeypatch.setattr(settings, "research_question", None)
+    clear_question()  # the .env default is never applied to a session implicitly (Stage D)
     w = c.get("/api/workspace").json()
     assert w["question"] is None and w["source"] is None
     g = c.get("/api/graph").json()
@@ -233,6 +234,7 @@ def test_blank_pdf_in_library_mode(api):
 
 # ---------- seed.py ----------
 def test_seed_question_protection(clean_db, manifest):  # noqa: F811
+    clear_question()
     with db.connect() as conn:
         assert db.get_question(conn) is None and db.analysis_counts(conn)["papers"] == 0  # isolated start
     llm = FakeLLM()
@@ -252,6 +254,7 @@ def test_seed_question_protection(clean_db, manifest):  # noqa: F811
 
 def test_seed_without_any_question_fails_clearly(clean_db, manifest, monkeypatch):  # noqa: F811
     monkeypatch.setattr(settings, "research_question", None)  # no .env default
+    clear_question()
     with db.connect() as conn:
         assert db.get_question(conn) is None  # no workspace question
     assert "question" not in json.loads(manifest.read_text())  # no manifest question

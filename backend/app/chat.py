@@ -167,6 +167,16 @@ def check_context(context: Optional[Dict]) -> Optional[Dict]:
     return {"kind": kind, "id": cid}
 
 
+def ensure_context_exists(conn, context: Optional[Dict]) -> None:
+    """The attached graph item must exist in THIS session (the connection is session-scoped). An id from another
+    session — or a deleted item — is rejected instead of being silently ignored."""
+    if not context or context["kind"] == "question":
+        return
+    table = {"claim": "claims", "relationship": "relationships", "paper": "papers"}[context["kind"]]
+    if not conn.execute(f"SELECT 1 FROM {table} WHERE id = %s", (context["id"],)).fetchone():
+        raise ValueError(f"The attached {context['kind']} does not exist in this research session.")
+
+
 def mentioned_numbers(text: str) -> List[int]:
     """'Why do Nodes 4 and 7 disagree?' -> [4, 7]"""
     out: List[int] = []
@@ -491,6 +501,7 @@ def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
     ctx_item = check_context(context)
     with db.connect() as conn:
         # Only turns asked under the current question reach the model (a changed question is a new frame).
+        ensure_context_exists(conn, ctx_item)
         earlier = db.chat_messages(conn, sid, limit=HISTORY_TURNS, question=question)
         try:
             ctx = gather_context(conn, llm, text, ctx_item)
