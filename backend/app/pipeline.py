@@ -17,6 +17,7 @@ from .compare import (apply_impact_guardrail, apply_pair_guardrail, build_impact
 from .config import settings
 from .contracts import ExtractionResult, ImpactJudgment, PairJudgment
 from .extract import build_extraction_prompt, validate_claims
+from .authors import AuthorIndex
 from .graph import build_graph, build_impact_summary, paper_detail, ref_order
 from .llm import LLM, QuotaExhaustedError
 from .question import MAX_QUESTION_LEN, normalize_question  # noqa: F401  (re-exported)
@@ -162,8 +163,10 @@ def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, a
               analysis_status: str = "complete") -> Dict:
     """Store a paper and its sentence index (replacing any previous version with the same id)."""
     ingest.check_paper_id(paper_id)
+    version = None
     if pdf_bytes:
-        pages, level = ingest.extract_pages(pdf_bytes), access_level or "full"
+        # Block-aware extraction for new uploads (stored sentences of earlier papers are never re-extracted).
+        pages, level, version = ingest.extract_page_blocks(pdf_bytes), access_level or "full", ingest.INGEST_VERSION
     elif abstract_text and abstract_text.strip():
         pages, level = [abstract_text], "abstract"
     else:
@@ -174,7 +177,7 @@ def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, a
         db.insert_paper(conn, {"id": paper_id, "title": title, "doi": doi, "url": url, "year": year,
                                "license": license, "access_level": level, "is_new": is_new,
                                "content_sha256": content_sha256(pdf_bytes) if pdf_bytes else None,
-                               "analysis_status": analysis_status})
+                               "analysis_status": analysis_status, "ingest_version": version})
         db.insert_sentences(conn, sentences)
     return {"paper_id": paper_id, "sentences": len(sentences), "access_level": level}
 
@@ -235,11 +238,13 @@ def compare_claims(llm: LLM, claim_ids: List[int], question: Optional[str] = Non
             existing = db.existing_pairs(conn)
             pairs = [p for p in pairs if (p["a"], p["b"]) not in existing]
         info = _claim_inputs(conn, {i for p in pairs for i in (p["a"], p["b"])})
+        authors = author_index(conn, db.all_papers(conn)) if pairs else None
     jobs = []
     for p in pairs:
         a, b = info[p["a"]], info[p["b"]]
         diff = condition_diff(a["conditions"], b["conditions"])
-        jobs.append((p, a, b, diff, build_pair_prompt(question, a, b, diff)))
+        dependence = authors.pair(a["paper_id"], b["paper_id"])["summary"]
+        jobs.append((p, a, b, diff, build_pair_prompt(question, a, b, diff, dependence)))
     results = _parallel(lambda job: llm.generate_json(job[4], PairJudgment), jobs)
     cited = [s for r in results if isinstance(r, PairJudgment) for s in r.cited_sentence_ids if s]
     rel_ids = []
@@ -264,6 +269,7 @@ def assess_impact(llm: LLM, new_paper_id: str, question: Optional[str] = None) -
         new_ids = set(db.claim_ids_for_paper(conn, new_paper_id))
         rels = db.relationships_touching(conn, list(new_ids))
         info = _claim_inputs(conn, {i for r in rels for i in (r["claim_a"], r["claim_b"])})
+        authors = author_index(conn, db.all_papers(conn)) if rels else None
     jobs = []
     for r in rels:
         new_id = r["claim_a"] if r["claim_a"] in new_ids else r["claim_b"]
@@ -274,7 +280,8 @@ def assess_impact(llm: LLM, new_paper_id: str, question: Optional[str] = None) -
         diff = condition_diff(prior["conditions"], new["conditions"])  # oriented earlier -> new
         rel_ctx = {"label": r["label"], "explanation": r["explanation"]} if not r["insufficient_evidence"] else {
             "label": "none (not verified)", "explanation": ""}
-        jobs.append((r, prior, new, build_impact_prompt(question, prior, new, diff, rel_ctx)))
+        dependence = authors.pair(prior["paper_id"], new["paper_id"])["summary"]
+        jobs.append((r, prior, new, build_impact_prompt(question, prior, new, diff, rel_ctx, dependence)))
     results = _parallel(lambda job: llm.generate_json(job[3], ImpactJudgment), jobs)
     cited = [s for r in results if isinstance(r, ImpactJudgment) for s in r.cited_sentence_ids if s]
     with db.connect() as conn:
@@ -298,6 +305,11 @@ def _sentences_for(conn, claims, rels=(), impacts=()) -> Dict[str, Dict]:
     return db.sentences_by_ids(conn, ids)
 
 
+def author_index(conn, papers: List[Dict]) -> AuthorIndex:
+    """Author lists for this request, parsed from stored front-matter sentences (nothing is stored)."""
+    return AuthorIndex(papers, db.page1_sentences(conn, [p["id"] for p in papers]))
+
+
 def graph_payload(question: Optional[str] = None) -> Dict:
     question = question or current_question()  # may be None before a question is set
     with db.connect() as conn:
@@ -306,8 +318,10 @@ def graph_payload(question: Optional[str] = None) -> Dict:
         latest = db.latest_new_paper(conn)
         disc_row = db.latest_discovery_for(conn, latest["id"]) if latest else None
         refs = db.assign_node_refs(conn, ref_order(papers, claims))
+        authors, reviews = author_index(conn, papers), db.all_reviews(conn)
     discovery = dict(disc_row["results"], for_paper_id=latest["id"]) if disc_row else None
-    return build_graph(question, papers, claims, rels, sentences, discovery=discovery, refs=refs)
+    return build_graph(question, papers, claims, rels, sentences, discovery=discovery, refs=refs,
+                       authors=authors, reviews=reviews)
 
 
 def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str = "live") -> Dict:
@@ -318,7 +332,9 @@ def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str
         papers, claims = db.all_papers(conn), db.all_claims(conn)
         impacts = db.impacts_for_paper(conn, paper_id)
         sentences = _sentences_for(conn, claims, impacts=impacts)
-    return build_impact_summary(paper, claims, impacts, sentences, papers, extraction=extraction, status=status)
+        authors, reviews = author_index(conn, papers), db.all_reviews(conn)
+    return build_impact_summary(paper, claims, impacts, sentences, papers, extraction=extraction, status=status,
+                                authors=authors, reviews=reviews)
 
 
 def extraction_warning(report: Dict) -> Optional[str]:

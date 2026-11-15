@@ -147,7 +147,8 @@ def test_pair_guardrail_hides_unsupported_judgment():
                      key_differences=["duration"], cited_sentence_ids=["pa:p1_s1", "pb:p2_s1", "pb:p8_s8"])
     r = compare.apply_pair_guardrail(j, "pa", "pb", STORED)
     assert r == {"label": "unresolved", "explanation": compare.INSUFFICIENT, "key_differences": [],
-                 "cited_sentence_ids": [], "insufficient_evidence": True}
+                 "cited_sentence_ids": [], "insufficient_evidence": True,
+                 "comparability": None, "model_label": None, "label_note": None}
     assert "refutes" not in str(r) and "genuine" not in str(r)
 
 

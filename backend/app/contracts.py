@@ -18,6 +18,8 @@ NOT_REPORTED = "not reported"
 
 Label = Literal["supports", "genuine_contradiction", "apparent_contradiction", "not_comparable", "unresolved"]
 Impact = Literal["strengthens", "challenges", "qualifies", "leaves_unresolved"]
+COMPARABILITY = ("same_hypothesis_same_measure", "same_hypothesis_different_setting", "thematic_only")
+Comparability = Literal["same_hypothesis_same_measure", "same_hypothesis_different_setting", "thematic_only"]
 
 
 class Conditions(BaseModel):
@@ -45,6 +47,11 @@ class ExtractionResult(BaseModel):
 
 
 class PairJudgment(BaseModel):
+    comparability: Optional[Comparability] = Field(
+        None, description="Decide this FIRST. same_hypothesis_same_measure: both test the same hypothesis with the "
+                          "same (or equivalent) outcome measure. same_hypothesis_different_setting: same hypothesis, "
+                          "but different dataset, population, setting or metric. thematic_only: related topic, but "
+                          "they test different hypotheses (e.g. different interventions or mechanisms).")
     label: Label
     explanation: str = Field(description="2-3 sentences grounded in the cited sentences")
     key_differences: List[str] = Field(description="Condition differences that matter for this judgment; may be empty")

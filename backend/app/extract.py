@@ -29,6 +29,8 @@ Rules:
   Never guess sample sizes, effect sizes, or significance.
 - Lines marked (table) are flattened table text. Use them only with a prose sentence stating the finding, or
   when the claim restates exact values from one row; never infer values across misaligned columns.
+- Lines marked (caption) are table/figure captions and (footnote) are footnotes: context, not findings on their
+  own; cite them only together with the sentence that states the finding.
 - If fewer than {max_claims} findings are clearly reported, return fewer. Return none if the paper reports no
   finding that bears on the research question; do not stretch unrelated results to fit it. When you return
   fewer (or none), set no_findings_note to one short sentence explaining why.
@@ -64,6 +66,15 @@ def select_prompt_sentences(sentences: List[Dict], limit: int) -> List[Dict]:
     return sorted(chosen, key=lambda s: order[s["id"]])
 
 
+def _prompt_tag(s: Dict) -> str:
+    kind = s.get("block_kind")
+    if kind == "table" or looks_like_table(s["text"]):
+        return "table"
+    if kind in ("caption", "footnote"):
+        return kind
+    return s.get("section", "front")
+
+
 def build_extraction_prompt(question: str, title: str, sentences: List[Dict], max_claims: int, limit: int) -> str:
     chosen = select_prompt_sentences(sentences, limit)
     note = ""
@@ -74,8 +85,7 @@ def build_extraction_prompt(question: str, title: str, sentences: List[Dict], ma
         question=question,
         title=title,
         truncation_note=note,
-        sentences="\n".join(f"[{s['id']}] ({'table' if looks_like_table(s['text']) else s.get('section', 'front')}) "
-                             f"{s['text']}" for s in chosen),
+        sentences="\n".join(f"[{s['id']}] ({_prompt_tag(s)}) {s['text']}" for s in chosen),
         max_claims=max_claims,
         example_id=chosen[0]["id"] if chosen else "paper:p1_s1",
     )

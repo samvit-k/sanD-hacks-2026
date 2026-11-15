@@ -5,27 +5,52 @@ Every quote is rebuilt from stored sentences; unverified IDs are never emitted.
 """
 from typing import Dict, List, Optional
 
+from .authors import AuthorIndex, independence_flag
 from .contracts import IMPACTS
+from .ingest import layout_artifacts
+
+
+def quote(sid: str, s: Dict) -> Dict:
+    """A stored sentence as shown to users. `text` is the stored source text (never edited); `kind`/`text_check`
+    say how it was extracted (NULL before D5); `artifacts` are display-only layout warnings."""
+    return {"id": sid, "paper_id": s["paper_id"], "page": s["page"], "section": s.get("section", "front"),
+            "text": s["text"], "kind": s.get("block_kind"), "text_check": s.get("text_check"),
+            "artifacts": layout_artifacts(s["text"])}
 
 
 def _quotes(ids: List[str], sentences: Dict[str, Dict]) -> List[Dict]:
-    return [
-        {"id": sid, "paper_id": sentences[sid]["paper_id"], "page": sentences[sid]["page"],
-         "section": sentences[sid].get("section", "front"), "text": sentences[sid]["text"]}
-        for sid in ids if sid in sentences
-    ]
+    return [quote(sid, sentences[sid]) for sid in ids if sid in sentences]
 
 
 def _short(text: str, n: int = 70) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
-def paper_detail(p: Dict) -> Dict:
-    return {"id": p["id"], "title": p["title"], "doi": p.get("doi"), "url": p.get("url"), "year": p.get("year"),
-            "access_level": p.get("access_level", "full"), "license": p.get("license"),
-            "is_new": bool(p.get("is_new")), "relevance": p.get("relevance"),
-            "analysis_status": p.get("analysis_status") or "complete",
-            "extraction": p.get("extraction_report")}
+def paper_detail(p: Dict, authors: Optional[AuthorIndex] = None) -> Dict:
+    out = {"id": p["id"], "title": p["title"], "doi": p.get("doi"), "url": p.get("url"), "year": p.get("year"),
+           "access_level": p.get("access_level", "full"), "license": p.get("license"),
+           "is_new": bool(p.get("is_new")), "relevance": p.get("relevance"),
+           "analysis_status": p.get("analysis_status") or "complete",
+           "extraction": p.get("extraction_report"), "ingest_version": p.get("ingest_version")}
+    if authors is not None:
+        out["authors"] = authors.lists.get(p["id"])
+    return out
+
+
+def _reviews_for(reviews: Optional[List[Dict]], kind: str, target_id: int) -> List[Dict]:
+    out = []
+    for r in reviews or []:
+        if r["target_kind"] == kind and r["target_id"] == target_id:
+            out.append({k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in r.items()})
+    return out
+
+
+def independence(label: str, pa: str, pb: str, authors: Optional[AuthorIndex], insufficient: bool) -> Optional[Dict]:
+    """Dependence between the two papers behind a relationship/impact, and how prominently to qualify the label."""
+    if authors is None:
+        return None
+    pair = authors.pair(pa, pb)
+    return {**pair, **independence_flag(label, pair, insufficient)}
 
 
 def claim_detail(c: Dict, papers: Dict[str, Dict], sentences: Dict[str, Dict]) -> Dict:
@@ -36,10 +61,16 @@ def claim_detail(c: Dict, papers: Dict[str, Dict], sentences: Dict[str, Dict]) -
             "quotes": _quotes(c["sentence_ids"], sentences)}
 
 
-def relationship_detail(r: Dict, claims: Dict[int, Dict], papers: Dict, sentences: Dict) -> Dict:
+def relationship_detail(r: Dict, claims: Dict[int, Dict], papers: Dict, sentences: Dict,
+                        authors: Optional[AuthorIndex] = None, reviews: Optional[List[Dict]] = None) -> Dict:
     a, b = claims[r["claim_a"]], claims[r["claim_b"]]
     cited = [] if r.get("insufficient_evidence") else _quotes(r.get("cited_sentence_ids") or [], sentences)
     return {"id": r["id"], "label": r["label"], "similarity": r.get("similarity"),
+            "model_label": r.get("model_label"), "comparability": r.get("comparability"),
+            "label_note": r.get("label_note"),
+            "independence": independence(r["label"], a["paper_id"], b["paper_id"], authors,
+                                         bool(r.get("insufficient_evidence"))),
+            "reviews": _reviews_for(reviews, "relationship", r["id"]),
             "insufficient_evidence": bool(r.get("insufficient_evidence")),
             "explanation": r.get("explanation", ""), "key_differences": r.get("key_differences") or [],
             "condition_diff": r.get("condition_diff") or {},
@@ -64,10 +95,13 @@ def ref_order(papers: List[Dict], claims: List[Dict]) -> List[str]:
 
 def build_graph(question: str, papers: List[Dict], claims: List[Dict], relationships: List[Dict],
                 sentences: Dict[str, Dict], discovery: Optional[Dict] = None, source: str = "live",
-                refs: Optional[Dict[str, int]] = None) -> Dict:
-    """`refs` maps node ids to stable display numbers ("Node N"); nodes without one get no `ref`."""
+                refs: Optional[Dict[str, int]] = None, authors: Optional[AuthorIndex] = None,
+                reviews: Optional[List[Dict]] = None) -> Dict:
+    """`refs` maps node ids to stable display numbers ("Node N"); nodes without one get no `ref`.
+    `authors` (per-request author index) adds author lists and independence assessments; `reviews` adds the
+    classification audit trail. Neither changes a stored label."""
     refs = refs or {}
-    pmap = {p["id"]: paper_detail(p) for p in papers}
+    pmap = {p["id"]: paper_detail(p, authors) for p in papers}
     cmap = {c["id"]: c for c in claims}
     nodes = [{"data": {"id": "q", "type": "question", "label": question or "No research question set"}}]
     edges = []
@@ -86,11 +120,15 @@ def build_graph(question: str, papers: List[Dict], claims: List[Dict], relations
         edges.append({"data": {"id": f"has:{c['id']}", "source": f"paper:{c['paper_id']}",
                                "target": f"claim:{c['id']}", "type": "has_claim"}})
     rels = [r for r in relationships if r["claim_a"] in cmap and r["claim_b"] in cmap]
+    details = {str(r["id"]): relationship_detail(r, cmap, pmap, sentences, authors, reviews) for r in rels}
     for r in rels:
+        d = details[str(r["id"])]
         edges.append({"data": {"id": f"rel:{r['id']}", "source": f"claim:{r['claim_a']}",
                                "target": f"claim:{r['claim_b']}", "type": "relationship", "label": r["label"],
                                "relationship_id": r["id"],
-                               "insufficient_evidence": bool(r.get("insufficient_evidence"))}})
+                               "insufficient_evidence": bool(r.get("insufficient_evidence")),
+                               "independence": (d["independence"] or {}).get("level"),
+                               "under_review": any(v["status"] == "proposed" for v in d["reviews"])}})
     disc_payload = None
     if discovery:
         anchor = f"paper:{discovery['for_paper_id']}" if discovery.get("for_paper_id") in pmap else "q"
@@ -107,14 +145,15 @@ def build_graph(question: str, papers: List[Dict], claims: List[Dict], relations
         "edges": edges,
         "papers": pmap,
         "claims": {str(c["id"]): claim_detail(c, pmap, sentences) for c in claims},
-        "relationships": {str(r["id"]): relationship_detail(r, cmap, pmap, sentences) for r in rels},
+        "relationships": details,
         "discovery": disc_payload,
     }
 
 
 def build_impact_summary(new_paper: Dict, claims: List[Dict], impacts: List[Dict], sentences: Dict[str, Dict],
-                         papers: List[Dict], extraction: Optional[Dict] = None, status: str = "live") -> Dict:
-    pmap = {p["id"]: paper_detail(p) for p in papers}
+                         papers: List[Dict], extraction: Optional[Dict] = None, status: str = "live",
+                         authors: Optional[AuthorIndex] = None, reviews: Optional[List[Dict]] = None) -> Dict:
+    pmap = {p["id"]: paper_detail(p, authors) for p in papers}
     cmap = {c["id"]: c for c in claims}
     new_claims = [c for c in claims if c["paper_id"] == new_paper["id"]]
     new_ids = {c["id"] for c in new_claims}
@@ -130,6 +169,9 @@ def build_impact_summary(new_paper: Dict, claims: List[Dict], impacts: List[Dict
         items.append({
             "id": i["id"], "impact": i["impact"], "rationale": i.get("rationale", ""),
             "insufficient_evidence": insufficient, "relationship_id": i.get("relationship_id"),
+            "independence": independence(i["impact"], new_paper["id"], cmap[i["prior_claim_id"]]["paper_id"],
+                                         authors, insufficient),
+            "reviews": _reviews_for(reviews, "impact", i["id"]),
             "prior_claim": claim_detail(cmap[i["prior_claim_id"]], pmap, sentences),
             "new_claim": claim_detail(cmap[i["new_claim_id"]], pmap, sentences),
             "cited": [] if insufficient else _quotes(i.get("cited_sentence_ids") or [], sentences),
@@ -140,7 +182,7 @@ def build_impact_summary(new_paper: Dict, claims: List[Dict], impacts: List[Dict
     counts["not_addressed"] = len(not_addressed)
     return {
         "status": status,
-        "paper": pmap.get(new_paper["id"], paper_detail(new_paper)),
+        "paper": pmap.get(new_paper["id"], paper_detail(new_paper, authors)),
         "new_claims": [claim_detail(c, pmap, sentences) for c in new_claims],
         "counts": counts,
         "impacts": items,

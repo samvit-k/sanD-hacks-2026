@@ -24,12 +24,13 @@ Every read/write is scoped by `session_id` so Stage D sessions need no chat rewr
 import logging
 import re
 import unicodedata
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from . import db
 from .citations import clean_id
 from .contracts import ChatAnswer
-from .graph import paper_detail, ref_order
+from .authors import AuthorIndex, POSSIBLE, REVIEW_HEADLINE, SHARED
+from .graph import paper_detail, quote, ref_order
 from .llm import LLM
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ GUARDRAIL_CITATIONS = "invalid_citations"
 GUARDRAIL_REFERENCES = "invalid_references"
 GUARDRAIL_UNCITED = "uncited_findings"
 GUARDRAIL_QUOTE = "unverified_quotation"
+GUARDRAIL_INDEPENDENCE = "independence_overstated"
 WITHHELD = {
     GUARDRAIL_CITATIONS: "The assistant’s answer cited sources that could not be verified against the stored papers, "
                          "so it is not shown.",
@@ -124,6 +126,9 @@ WITHHELD = {
                        "so it is not shown as a supported answer.",
     GUARDRAIL_QUOTE: "The assistant’s answer contained a quotation that does not match the stored paper text, "
                      "so it is not shown.",
+    GUARDRAIL_INDEPENDENCE: "The assistant’s answer presented related findings as confirmation without acknowledging "
+                            "that the papers share authors (or claimed independent confirmation, which ResearchLens "
+                            "cannot establish), so it is not shown.",
 }
 WITHHELD_HINT = " Try rephrasing, or ask about a specific node or connection."
 CONTEXT_KINDS = ("question", "paper", "claim", "relationship")
@@ -262,7 +267,9 @@ def gather_context(conn, llm: LLM, message: str, context: Optional[Dict]) -> Dic
     sentence_ids += [s for r in rels if not r.get("insufficient_evidence") for s in (r.get("cited_sentence_ids") or [])]
     sentence_ids += [s for i in impacts if not i.get("insufficient_evidence") for s in (i.get("cited_sentence_ids") or [])]
     sentences = db.sentences_by_ids(conn, sentence_ids)
+    authors = AuthorIndex(papers, db.page1_sentences(conn, [p["id"] for p in papers]))
     return {
+        "authors": authors,
         "papers": papers, "claims": claims, "relationships": rels, "impacts": impacts,
         "sentences": sentences, "refs": refs, "latest": latest,
         "focus_rels": focus_rels, "focus_claims": [c for c in focus if c in claim_rows], "focus_papers": focus_papers,
@@ -279,7 +286,17 @@ Rules:
 - Claims are model-extracted paraphrases; source sentences are verbatim. Earlier relationship labels and impacts are model assessments, not established facts — say so when you rely on them.
 - If the evidence below cannot answer the question, set insufficient_evidence to true and only say what is missing (e.g. "There is insufficient evidence in the library about long-term retention."); do not state findings in that case. Never invent findings, numbers, quotes, studies or citations.
 - Never call a finding true, false, proven, disproved or debunked; describe how the evidence relates. A non-significant result does not refute a significant one. Note when a paper is abstract-only.
+- Independence: never describe evidence as independent, or as independent confirmation, corroboration or replication — this library cannot establish independence. When two papers SHARE AUTHORS (listed below), any statement that one supports, confirms or strengthens the other must say that they share authors, so it is supporting evidence from related work, not independent corroboration. Shared authorship does not by itself mean the same data or experiments.
 - Relate the answer to the central research question when relevant. Be concise (at most 180 words), plain prose, no headings."""
+
+
+def _pair_note(ctx: Dict, claim_a: int, claim_b: int) -> Optional[str]:
+    if not ctx.get("authors"):
+        return None
+    cp = {c["id"]: c["paper_id"] for c in ctx["claims"]}
+    if claim_a not in cp or claim_b not in cp:
+        return None
+    return ctx["authors"].pair(cp[claim_a], cp[claim_b])["summary"]
 
 
 def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict]) -> Tuple[str, Dict[str, str], Set[str]]:
@@ -304,6 +321,10 @@ def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict
             notes.append("most recently evaluated new paper" if ctx["latest"] and ctx["latest"]["id"] == p["id"]
                          else "evaluated paper")
         lines.append(f"[[{tok}]] (Node {refs.get(tok, '?')}) \"{p['title']}\" — {', '.join(notes)}")
+        al = ctx["authors"].lists.get(p["id"]) if ctx.get("authors") else None
+        if al:
+            lines.append(f"  authors: {', '.join(al['names'])}" if al["status"] == "parsed"
+                         else "  authors: could not be read reliably")
     lines += ["", "CLAIMS (model-extracted paraphrases) with their verbatim SOURCE SENTENCES:"]
     for c in ctx["claims"]:
         tok = f"claim:{c['id']}"
@@ -324,6 +345,9 @@ def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict
                 continue
             diffs = "; ".join(r.get("key_differences") or [])
             lines.append(f"{head}: {r['label']} — {r.get('explanation', '')}" + (f" Key differences: {diffs}" if diffs else ""))
+            dep = _pair_note(ctx, r["claim_a"], r["claim_b"])
+            if dep:
+                lines.append(f"  independence: {dep}")
             lines += [ln for ln in (show(sid) for sid in r.get("cited_sentence_ids") or []) if ln]
     if ctx["impacts"]:
         latest = ctx["latest"]
@@ -334,6 +358,9 @@ def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict
             else:
                 verdict = f"{i['impact']} — {i.get('rationale', '')}"
             lines.append(f"new [[claim:{i['new_claim_id']}]] -> earlier [[claim:{i['prior_claim_id']}]]: {verdict}")
+            dep = _pair_note(ctx, i["new_claim_id"], i["prior_claim_id"])
+            if dep:
+                lines.append(f"  independence: {dep}")
             if not i.get("insufficient_evidence"):
                 lines += [ln for ln in (show(sid) for sid in i.get("cited_sentence_ids") or []) if ln]
     focus = [f"[[rel:{r}]]" for r in ctx["focus_rels"]] + [f"[[claim:{c}]]" for c in ctx["focus_claims"]] + \
@@ -398,13 +425,64 @@ def strip_inline_citations(text: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", out).strip()
 
 
+# --- independence language ---------------------------------------------------------------------------------
+# Words that present one finding as backing another. Between papers that share authors they must come with an
+# acknowledgement of the shared authorship; "independent(ly)" is never asserted (it cannot be established here).
+CONFIRM_RE = re.compile(r"\b(confirm\w*|corroborat\w*|replicat\w*|reproduc\w*|validat\w*|strengthen\w*|support\w*|"
+                        r"agree\w*|consistent with|in line with|echo\w*)\b", re.I)
+INDEPENDENT_RE = re.compile(r"\bindependent(?:ly)?\b", re.I)
+NEGATED_BEFORE_RE = re.compile(r"\b(not|no|never|cannot|can't|isn't|aren't|wasn't|without|lacks?|unclear|unknown|"
+                               r"uncertain|unverified|not established|rather than|instead of|whether)\b[^.;!?]{0,60}$",
+                               re.I)
+NEGATED_AFTER_RE = re.compile(r"^[^.;!?]{0,25}\b(not established|unverified|unknown|cannot be established|is unclear)\b",
+                              re.I)
+AUTHOR_MENTION_RE = re.compile(r"\b(co-?)?authors?(hip)?\b|\bsame (?:research )?(?:group|team|lab)\b", re.I)
+
+
+def referenced_papers(content: str, claim_paper: Dict[int, str], rel_claims: Dict[int, Tuple[int, int]]) -> Set[str]:
+    out: Set[str] = set()
+    for tok in TOKEN_RE.findall(content or ""):
+        kind, _, ident = tok.partition(":")
+        if kind == "paper":
+            out.add(ident)
+        elif kind == "claim" and int(ident) in claim_paper:
+            out.add(claim_paper[int(ident)])
+        elif kind == "rel" and int(ident) in rel_claims:
+            out.update(claim_paper[c] for c in rel_claims[int(ident)] if c in claim_paper)
+    return out
+
+
+def independence_issues(content: str, papers: Set[str], authors: Optional[AuthorIndex]) -> List[Dict]:
+    """Deterministic check of an answer's independence language. Returns one issue per problem found."""
+    text = ANY_TOKEN_RE.sub(" item ", content or "")
+    issues: List[Dict] = []
+    for m in INDEPENDENT_RE.finditer(text):
+        if not (NEGATED_BEFORE_RE.search(text[:m.start()]) or NEGATED_AFTER_RE.search(text[m.end():])):
+            issues.append({"kind": "independence_claimed",
+                           "detail": "The answer describes evidence as independent; ResearchLens cannot establish "
+                                     "independence between papers."})
+            break
+    if authors is None or not CONFIRM_RE.search(text) or AUTHOR_MENTION_RE.search(text):
+        return issues
+    ids = sorted(papers)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            pair = authors.pair(a, b)
+            if pair["status"] in (SHARED, POSSIBLE):
+                issues.append({"kind": "shared_authors_unacknowledged", "papers": [a, b],
+                               "detail": pair["summary"]})
+    return issues
+
+
 def _withheld(reason: str) -> Dict:
     return {"content": WITHHELD[reason] + WITHHELD_HINT, "cited_sentence_ids": [], "insufficient_evidence": True,
             "guardrail": reason}
 
 
-def validate_answer(ans: ChatAnswer, shown: Dict[str, str], tokens: Set[str]) -> Dict:
-    """Strict: any failed check withholds the whole answer; nothing is silently repaired."""
+def validate_answer(ans: ChatAnswer, shown: Dict[str, str], tokens: Set[str],
+                    independence: Optional[Callable[[str], List[Dict]]] = None) -> Dict:
+    """Strict: any failed check withholds the whole answer; nothing is silently repaired.
+    `independence(answer) -> issues` checks independence language (see independence_issues)."""
     answer = (ans.answer or "").strip()
     # 1. Citation IDs: every one must be a sentence that was shown to the model.
     verified: List[str] = []
@@ -435,6 +513,9 @@ def validate_answer(ans: ChatAnswer, shown: Dict[str, str], tokens: Set[str]) ->
     # 4. Citations are required by default; the insufficient_evidence flag never exempts a statement.
     if not verified and assertive_clauses(answer):
         return _withheld(GUARDRAIL_UNCITED)
+    # 5. Never present dependent studies as confirmation without saying so, and never assert independence.
+    if independence is not None and independence(answer):
+        return _withheld(GUARDRAIL_INDEPENDENCE)
     return {"content": answer or "No answer was returned.", "cited_sentence_ids": verified,
             "insufficient_evidence": bool(ans.insufficient_evidence), "guardrail": None}
 
@@ -465,7 +546,15 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
     """API shape for stored messages. Quotes are rebuilt from `sentences`; references from `node_refs`."""
     node_refs = db.node_ref_map(conn)
     rels = {r["id"]: r for r in db.all_relationships(conn)}
-    papers = {p["id"]: paper_detail(p) for p in db.all_papers(conn)}
+    paper_rows = db.all_papers(conn)
+    papers = {p["id"]: paper_detail(p) for p in paper_rows}
+    authors: Optional[AuthorIndex] = None
+    claim_paper: Dict[int, str] = {}
+    rel_claims: Dict[int, Tuple[int, int]] = {}
+    if any(m["role"] == "assistant" for m in rows):
+        authors = AuthorIndex(paper_rows, db.page1_sentences(conn, list(papers)))
+        claim_paper = {c["id"]: c["paper_id"] for c in db.all_claims(conn)}
+        rel_claims = {rid: (r["claim_a"], r["claim_b"]) for rid, r in rels.items()}
     sentences = db.sentences_by_ids(conn, [s for m in rows for s in (m.get("cited_sentence_ids") or [])])
     out = []
     for m in rows:
@@ -473,8 +562,7 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
         for sid in m.get("cited_sentence_ids") or []:
             s = sentences.get(sid)
             if s:  # a sentence whose paper was later removed is simply not shown
-                cited.append({"id": sid, "paper_id": s["paper_id"], "page": s["page"], "section": s.get("section"),
-                              "text": s["text"], "paper_title": papers.get(s["paper_id"], {}).get("title")})
+                cited.append({**quote(sid, s), "paper_title": papers.get(s["paper_id"], {}).get("title")})
         out.append({
             "id": m["id"], "session_id": m["session_id"], "role": m["role"],
             "content": strip_inline_citations(m["content"]) if m["role"] == "assistant" else m["content"],
@@ -482,8 +570,23 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
             "guardrail": m.get("guardrail"), "question": m.get("question"), "created_at": m["created_at"].isoformat() if m.get("created_at") else None,
             "cited": cited,
             "references": resolve_references(m["content"], node_refs, rels, set(papers)) if m["role"] == "assistant" else {},
+            "integrity": _integrity(m, authors, claim_paper, rel_claims) if m["role"] == "assistant" else None,
         })
     return out
+
+
+def _integrity(m: Dict, authors: Optional[AuthorIndex], claim_paper: Dict, rel_claims: Dict) -> Optional[Dict]:
+    """Re-checks a STORED answer against today's author information. The stored text is never edited; a problem
+    is reported as a prominent status shown before the answer."""
+    if m.get("guardrail") or authors is None:
+        return None
+    issues = independence_issues(m["content"], referenced_papers(m["content"], claim_paper, rel_claims), authors)
+    if not issues:
+        return None
+    return {"headline": REVIEW_HEADLINE,
+            "detail": " ".join(_unique([i["detail"] for i in issues])),
+            "issues": issues,
+            "note": "Checked by ResearchLens when displayed; the answer text below is unchanged."}
 
 
 # ---------- public API ----------
@@ -514,7 +617,10 @@ def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
     except Exception as exc:
         raise ChatUnavailableError(f"Gemini was unavailable ({type(exc).__name__}). "
                                    "Your message was not saved; please try again.") from exc
-    result = validate_answer(ans, shown, tokens)
+    claim_paper = {c["id"]: c["paper_id"] for c in ctx["claims"]}
+    rel_claims = {r["id"]: (r["claim_a"], r["claim_b"]) for r in ctx["relationships"]}
+    result = validate_answer(ans, shown, tokens, independence=lambda a: independence_issues(
+        a, referenced_papers(a, claim_paper, rel_claims), ctx.get("authors")))
     if result["guardrail"]:
         log.warning("chat answer withheld (%s)", result["guardrail"])
     with db.connect() as conn:

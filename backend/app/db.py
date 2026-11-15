@@ -259,8 +259,9 @@ def delete_all(conn) -> None:
     and the discovery cache (keyed by search query, independent of the question).
     TRUNCATE is transactional in PostgreSQL: it is undone if the surrounding transaction rolls back."""
     # The conversation refers to nodes/sentences of this analysis, so it is cleared with it.
+    # Reviews refer to relationship/impact ids, which RESTART IDENTITY reuses: they go with the analysis.
     conn.execute("TRUNCATE papers, sentences, claims, relationships, impacts, discovery_links, node_refs, "
-                 "chat_messages RESTART IDENTITY CASCADE")
+                 "chat_messages, relationship_reviews RESTART IDENTITY CASCADE")
 
 
 def clear_analysis(conn) -> int:
@@ -386,11 +387,11 @@ def analysis_counts(conn) -> Dict[str, int]:
 def insert_paper(conn, p: Dict) -> None:
     conn.execute(
         """INSERT INTO papers (id, title, doi, url, year, access_level, license, is_new, content_sha256,
-                                analysis_status)
+                                analysis_status, ingest_version)
            VALUES (%(id)s, %(title)s, %(doi)s, %(url)s, %(year)s, %(access_level)s, %(license)s, %(is_new)s,
-                   %(content_sha256)s, %(analysis_status)s)""",
+                   %(content_sha256)s, %(analysis_status)s, %(ingest_version)s)""",
         {"doi": None, "url": None, "year": None, "license": None, "is_new": False, "access_level": "full",
-         "content_sha256": None, "analysis_status": "complete", **p},
+         "content_sha256": None, "analysis_status": "complete", "ingest_version": None, **p},
     )
 
 
@@ -401,9 +402,9 @@ def set_analysis_status(conn, paper_id: str, status: str) -> None:
 def insert_sentences(conn, sentences: List[Dict]) -> None:
     with conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO sentences (id, paper_id, page, idx, section, text) "
-            "VALUES (%(id)s, %(paper_id)s, %(page)s, %(idx)s, %(section)s, %(text)s)",
-            [{"section": "front", **s} for s in sentences],
+            "INSERT INTO sentences (id, paper_id, page, idx, section, text, block_kind, text_check) "
+            "VALUES (%(id)s, %(paper_id)s, %(page)s, %(idx)s, %(section)s, %(text)s, %(kind)s, %(text_check)s)",
+            [{"section": "front", "kind": None, "text_check": None, **s} for s in sentences],
         )
 
 
@@ -434,7 +435,8 @@ def set_relevance(conn, paper_id: str, relevance: Optional[float]) -> None:
 
 def paper_sentences(conn, paper_id: str) -> List[Dict]:
     return conn.execute(
-        "SELECT id, paper_id, page, idx, section, text FROM sentences WHERE paper_id = %s ORDER BY page, idx",
+        "SELECT id, paper_id, page, idx, section, text, block_kind, text_check FROM sentences "
+        "WHERE paper_id = %s ORDER BY page, idx",
         (paper_id,),
     ).fetchall()
 
@@ -444,7 +446,8 @@ def sentences_by_ids(conn, ids: Iterable[str]) -> Dict[str, Dict]:
     if not ids:
         return {}
     rows = conn.execute(
-        "SELECT id, paper_id, page, idx, section, text FROM sentences WHERE id = ANY(%s)", (ids,)
+        "SELECT id, paper_id, page, idx, section, text, block_kind, text_check FROM sentences WHERE id = ANY(%s)",
+        (ids,)
     ).fetchall()
     return {r["id"]: r for r in rows}
 
@@ -545,19 +548,67 @@ def upsert_relationship(conn, r: Dict) -> int:
     r = normalize_pair_order(r)
     row = conn.execute(
         """INSERT INTO relationships (claim_a, claim_b, label, similarity, condition_diff, explanation,
-                                      key_differences, cited_sentence_ids, insufficient_evidence, model)
+                                      key_differences, cited_sentence_ids, insufficient_evidence, model,
+                                      comparability, model_label, label_note)
            VALUES (%(claim_a)s, %(claim_b)s, %(label)s, %(similarity)s, %(condition_diff)s, %(explanation)s,
-                   %(key_differences)s, %(cited_sentence_ids)s, %(insufficient_evidence)s, %(model)s)
+                   %(key_differences)s, %(cited_sentence_ids)s, %(insufficient_evidence)s, %(model)s,
+                   %(comparability)s, %(model_label)s, %(label_note)s)
            ON CONFLICT (claim_a, claim_b) DO UPDATE SET
              label = EXCLUDED.label, similarity = EXCLUDED.similarity,
              condition_diff = EXCLUDED.condition_diff, explanation = EXCLUDED.explanation,
              key_differences = EXCLUDED.key_differences, cited_sentence_ids = EXCLUDED.cited_sentence_ids,
-             insufficient_evidence = EXCLUDED.insufficient_evidence, model = EXCLUDED.model, created_at = now()
+             insufficient_evidence = EXCLUDED.insufficient_evidence, model = EXCLUDED.model,
+             comparability = EXCLUDED.comparability, model_label = EXCLUDED.model_label,
+             label_note = EXCLUDED.label_note, created_at = now()
            RETURNING id""",
-        {"similarity": None, "model": None, **r,
+        {"similarity": None, "model": None, "comparability": None, "model_label": None, "label_note": None, **r,
          "condition_diff": Jsonb(r.get("condition_diff") or {}), "key_differences": Jsonb(r.get("key_differences") or [])},
     ).fetchone()
     return row["id"]
+
+
+def page1_sentences(conn, paper_ids: List[str], per_paper: int = 3) -> Dict[str, List[Dict]]:
+    """The first few stored sentences of page 1 per paper (front matter: title and author block)."""
+    rows = conn.execute(
+        """SELECT id, paper_id, text FROM (
+             SELECT id, paper_id, text, row_number() OVER (PARTITION BY paper_id ORDER BY idx) AS rn
+             FROM sentences WHERE page = 1 AND paper_id = ANY(%s)) t
+           WHERE rn <= %s ORDER BY paper_id, rn""", (list(paper_ids), per_paper)).fetchall()
+    out: Dict[str, List[Dict]] = {}
+    for r in rows:
+        out.setdefault(r["paper_id"], []).append(r)
+    return out
+
+
+# ---------- classification reviews (audit trail; never rewrites relationships/impacts) ----------
+REVIEWER_TYPES = ("automated", "model", "human")
+
+
+def add_review(conn, r: Dict) -> int:
+    if r.get("reviewer_type") not in REVIEWER_TYPES:
+        raise ValueError("reviewer_type must be automated, model or human")
+    return conn.execute(
+        """INSERT INTO relationship_reviews (target_kind, target_id, original_label, proposed_label, reason,
+                                             reviewer_type, reviewer, evidence)
+           VALUES (%(target_kind)s, %(target_id)s, %(original_label)s, %(proposed_label)s, %(reason)s,
+                   %(reviewer_type)s, %(reviewer)s, %(evidence)s) RETURNING id""",
+        {"proposed_label": None, **r, "evidence": Jsonb(r.get("evidence") or {})}).fetchone()["id"]
+
+
+def decide_review(conn, review_id: int, decision: str, decided_by: str, note: Optional[str] = None) -> Optional[Dict]:
+    """A human accepts or rejects a proposal. The relationship/impact row itself is left unchanged."""
+    if decision not in ("accepted", "rejected"):
+        raise ValueError("decision must be accepted or rejected")
+    if not (decided_by or "").strip():
+        raise ValueError("decided_by is required: only a named human can decide a review")
+    return conn.execute(
+        """UPDATE relationship_reviews SET status = %s, decided_by = %s, decision_note = %s, decided_at = now()
+           WHERE id = %s AND status = 'proposed' RETURNING *""",
+        (decision, decided_by.strip(), note, review_id)).fetchone()
+
+
+def all_reviews(conn) -> List[Dict]:
+    return conn.execute("SELECT * FROM relationship_reviews ORDER BY id").fetchall()
 
 
 def all_relationships(conn) -> List[Dict]:

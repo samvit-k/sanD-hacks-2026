@@ -134,3 +134,43 @@ CREATE TABLE IF NOT EXISTS discovery_links (
     requested_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (paper_id, query_hash)
 );
+
+-- ---------- Stage D5 (additive) ----------
+-- Which sentence-extraction method produced a paper's stored sentences. NULL = the original line-based
+-- extraction (every paper stored before D5); 2 = block-aware extraction. Stored sentences are never re-extracted.
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS ingest_version int;
+
+-- Gemini's own structured answer for newer pair judgments. `model_label` is the label Gemini chose; `label`
+-- differs only when code applied a documented guard (see compare.py). NULL for judgments made before D5.
+ALTER TABLE relationships ADD COLUMN IF NOT EXISTS comparability text;
+ALTER TABLE relationships ADD COLUMN IF NOT EXISTS model_label text;
+ALTER TABLE relationships ADD COLUMN IF NOT EXISTS label_note text;
+
+-- Audit trail for relationship/impact classifications. Original labels are never edited: a review records a
+-- proposed classification and why, who proposed it (deterministic code, an AI model, or a human), and — only for
+-- human decisions — whether it was accepted. Accepted reviews are shown next to the original label; the
+-- relationships/impacts rows themselves are not rewritten.
+CREATE TABLE IF NOT EXISTS relationship_reviews (
+    id              serial PRIMARY KEY,
+    target_kind     text NOT NULL CHECK (target_kind IN ('relationship', 'impact')),
+    target_id       int NOT NULL,
+    original_label  text NOT NULL,
+    proposed_label  text,              -- NULL: no relabel proposed (e.g. a note only)
+    reason          text NOT NULL,
+    reviewer_type   text NOT NULL CHECK (reviewer_type IN ('automated', 'model', 'human')),
+    reviewer        text NOT NULL,
+    status          text NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'accepted', 'rejected')),
+    decided_by      text,
+    decision_note   text,
+    evidence        jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    decided_at      timestamptz,
+    -- Only a human can accept or reject a proposal.
+    CHECK (status = 'proposed' OR (decided_by IS NOT NULL AND decided_at IS NOT NULL))
+);
+-- How a sentence was extracted (ingest_version 2 only; NULL for earlier papers): `block_kind` is body | caption |
+-- table | footnote; `text_check` is single_block (inside one PDF text block, text-layer order) or joined_blocks
+-- (reconstructed across blocks: verify the wording on the page).
+ALTER TABLE sentences ADD COLUMN IF NOT EXISTS block_kind text;
+ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_check text;
+CREATE INDEX IF NOT EXISTS relationship_reviews_target ON relationship_reviews (target_kind, target_id);

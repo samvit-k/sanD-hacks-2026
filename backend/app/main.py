@@ -232,6 +232,72 @@ def relationship(rel_id: int, sid: str = Depends(require_session)):
     return g["relationships"][str(rel_id)]
 
 
+# ---------- classification reviews (audit trail; stored labels are never rewritten) ----------
+class ReviewProposal(BaseModel):
+    target_kind: str           # relationship | impact
+    target_id: int
+    proposed_label: Optional[str] = None
+    reason: str
+    reviewer: str              # the person proposing it
+
+
+class ReviewDecision(BaseModel):
+    decision: str              # accepted | rejected
+    decided_by: str
+    note: Optional[str] = None
+
+
+def _review_target_label(conn, kind: str, target_id: int) -> str:
+    table = {"relationship": ("relationships", "label"), "impact": ("impacts", "impact")}.get(kind)
+    if not table:
+        raise HTTPException(422, "target_kind must be relationship or impact")
+    row = conn.execute(f"SELECT {table[1]} AS label FROM {table[0]} WHERE id = %s", (target_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, f"{kind} not found in this project")
+    return row["label"]
+
+
+@app.get("/api/reviews")
+def list_reviews(sid: str = Depends(require_session)):
+    def run():
+        with db.connect() as conn:
+            return {"reviews": db.all_reviews(conn)}
+    return _in(sid, run)
+
+
+@app.post("/api/reviews", status_code=201)
+def propose_review(req: ReviewProposal, sid: str = Depends(require_session)):
+    """A person proposes a reclassification. It is recorded, never applied to the stored label."""
+    if not req.reason.strip() or not req.reviewer.strip():
+        raise HTTPException(422, "reason and reviewer are required")
+
+    def run():
+        with db.connect() as conn:
+            original = _review_target_label(conn, req.target_kind, req.target_id)
+            rid = db.add_review(conn, {"target_kind": req.target_kind, "target_id": req.target_id,
+                                       "original_label": original, "proposed_label": req.proposed_label,
+                                       "reason": req.reason.strip(), "reviewer_type": "human",
+                                       "reviewer": req.reviewer.strip()})
+            return {"id": rid, "original_label": original, "status": "proposed"}
+    return _touched(sid, _in(sid, run))
+
+
+@app.post("/api/reviews/{review_id}/decision")
+def decide_review(review_id: int, req: ReviewDecision, sid: str = Depends(require_session)):
+    """A named person accepts or rejects a proposal (automated, model or human). The relationship/impact row
+    keeps its original label; the accepted review is shown next to it."""
+    def run():
+        with db.connect() as conn:
+            try:
+                row = db.decide_review(conn, review_id, req.decision, req.decided_by, req.note)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
+            if not row:
+                raise HTTPException(409, "review not found or already decided")
+            return row
+    return _touched(sid, _in(sid, run))
+
+
 @app.get("/api/impact/latest")
 def latest_impact(sid: str = Depends(require_session)):
     def run():
