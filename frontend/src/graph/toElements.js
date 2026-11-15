@@ -87,7 +87,9 @@ export function buildElements(graph) {
   const edges = graph.edges.map(({ data }) => {
     const evidence = isEvidenceEdge(data)
     const classes = evidence
-      ? ['evidence', `rel-${data.label}`, data.insufficient_evidence ? 'insufficient' : ''].filter(Boolean).join(' ')
+      ? ['evidence', `rel-${data.label}`, data.insufficient_evidence ? 'insufficient' : '',
+        data.independence === 'review' ? 'indep-review' : '', data.under_review ? 'under-review' : '']
+        .filter(Boolean).join(' ')
       : `structural ${data.type}`
     return { group: 'edges', data: { ...data, evidence }, classes }
   })

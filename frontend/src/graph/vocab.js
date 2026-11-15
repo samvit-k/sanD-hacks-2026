@@ -54,6 +54,17 @@ export const IMPACTS = {
   strengthens: { label: 'Strengthens', color: '#3f9e6e' },
   leaves_unresolved: { label: 'Leaves unresolved', color: '#8e8ea0' },
 }
+// Shared or unknown authorship behind a supportive label: shown, never used to change the label.
+export const INDEPENDENCE = {
+  color: '#d4a017',
+  label: 'Independence not established',
+  help: 'Supporting evidence from papers that share authors (or whose authors could not be read): not independent corroboration. Review needed.',
+}
+export const REVIEW = {
+  color: '#6d4fc2',
+  label: 'Reclassification proposed',
+  help: 'Someone proposed a different label; the original label is shown until a person accepts the proposal.',
+}
 export const IMPACT_ORDER = ['challenges', 'qualifies', 'strengthens', 'leaves_unresolved']
 
 export const CONDITION_LABELS = {

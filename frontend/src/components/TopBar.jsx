@@ -19,11 +19,11 @@ export function checksStatus(checks) {
 function ChecksPill({ checks, source }) {
   if (source !== 'live') return null
   const s = checksStatus(checks)
-  if (s.state === 'unavailable') return <span className="pill" title={CHECKS_HELP}>checks unavailable</span>
+  if (s.state === 'unavailable') return <span className="pill" title={CHECKS_HELP}>Checks Unavailable</span>
   if (s.state === 'issues') {
-    return <span className="pill pill-bad" title={CHECKS_HELP}><b className="bad">{s.issues}</b> citation integrity issues</span>
+    return <span className="pill pill-bad" title={CHECKS_HELP}><b className="bad">{s.issues}</b> Citation Integrity Issues</span>
   }
-  return <span className="pill" title={CHECKS_HELP}><b className="good">✓</b> citation integrity passed</span>
+  return <span className="pill" title={CHECKS_HELP}><b className="good">✓</b> Citation Integrity Passed</span>
 }
 
 function ServiceDots({ health }) {
@@ -42,7 +42,7 @@ export default function TopBar({
   projectTitle = null,
 }) {
   // The project's (renameable) title; the full central question stays in the tooltip and the left panel.
-  const heading = projectTitle || workspace?.question || 'No research question yet'
+  const heading = projectTitle || workspace?.question || 'No Research Question Yet'
   const tooltip = workspace?.question ? `Central question: ${workspace.question}` : heading
   const c = workspace?.counts ?? {}
   return (
@@ -50,7 +50,7 @@ export default function TopBar({
       <div className="tb-title">
         <span className="tb-name" title={tooltip} data-testid="project-heading">{heading}</span>
         <span className="tb-meta">
-          {c.papers ?? 0} papers · {c.claims ?? 0} claims · {c.relationships ?? 0} relationships
+          {c.papers ?? 0} Papers · {c.claims ?? 0} Claims · {c.relationships ?? 0} Relationships
         </span>
       </div>
       <div className="tb-actions">

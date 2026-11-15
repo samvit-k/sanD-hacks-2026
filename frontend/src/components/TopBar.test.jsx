@@ -29,21 +29,21 @@ describe('TopBar checks pill', () => {
   const props = { graph: null, workspace: null, health: null, query: '', onQuery: () => {}, onPick: () => {},
     filters: { labels: {}, insufficient: true, structural: true, discovery: true, onlyNew: false }, onFilters: () => {} }
 
-  it('says "citation integrity passed" with a tooltip that disclaims scientific truth', () => {
+  it('says "Citation Integrity Passed" with a tooltip that disclaims scientific truth', () => {
     render(<TopBar {...props} source="live" checks={clean} />)
-    const pill = screen.getByText(/citation integrity passed/)
+    const pill = screen.getByText(/Citation Integrity Passed/)
     expect(pill.closest('.pill').title).toMatch(/does not assess whether the scientific claims are correct/)
     expect(screen.queryByText(/citations verified/)).toBeNull()
   })
 
-  it('shows "checks unavailable" for malformed data', () => {
+  it('shows "Checks Unavailable" for malformed data', () => {
     render(<TopBar {...props} source="live" checks={{ ok: true }} />)
-    expect(screen.getByText('checks unavailable')).toBeTruthy()
+    expect(screen.getByText('Checks Unavailable')).toBeTruthy()
   })
 
   it('keeps the violation warning', () => {
     render(<TopBar {...props} source="live" checks={{ ok: false, violations: { a: [1, 2] } }} />)
-    expect(screen.getByText(/citation integrity issues/)).toBeTruthy()
+    expect(screen.getByText(/Citation Integrity Issues/)).toBeTruthy()
   })
 })
 

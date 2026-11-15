@@ -1,5 +1,6 @@
 import { INSUFFICIENT, RELATIONSHIPS } from '../../graph/vocab.js'
-import { AccessBadge, AskButton, ConditionDiffTable, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
+import { AccessBadge, AskButton, ConditionDiffTable, IndependenceNotice, ModelBox, NodeChip, QuoteList, RelPill,
+  ReviewList, Section } from './parts.jsx'
 
 const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : '—')
 
@@ -32,12 +33,24 @@ export default function RelationshipView({ rel, graph, refs, onNavigate, onAsk }
   const relA = graph.papers?.[rel.claim_a.paper_id]?.relevance
   const relB = graph.papers?.[rel.claim_b.paper_id]?.relevance
   const help = insufficient ? INSUFFICIENT.help : RELATIONSHIPS[rel.label]?.help
+  const pending = (rel.reviews ?? []).filter((r) => r.status === 'proposed')
+  const labelOf = (l) => RELATIONSHIPS[l]?.label ?? l
   return (
     <>
       <div className="insp-kicker">Evidence relationship</div>
       <h2 className="insp-title">Node {nA ?? '?'} ↔ Node {nB ?? '?'}</h2>
-      <div className="insp-pillrow"><RelPill label={rel.label} insufficient={insufficient} /></div>
+      <div className="insp-pillrow">
+        <RelPill label={rel.label} insufficient={insufficient} qualifier={rel.independence?.level} />
+        {pending.length > 0 && <span className="badge badge-review" title="A reclassification has been proposed">Under review</span>}
+      </div>
       {help && <p className="insp-help">{help}</p>}
+      <IndependenceNotice independence={rel.independence} />
+      {rel.label_note && (
+        <div className="warn-card soft" role="note" data-testid="label-note">
+          <b>Label adjusted by ResearchLens.</b> {rel.label_note}
+          {rel.model_label && <div className="insp-small">Gemini’s label: {labelOf(rel.model_label)} · comparability: {rel.comparability}</div>}
+        </div>
+      )}
 
       {insufficient ? (
         <div className="warn-card" role="note">
@@ -72,6 +85,12 @@ export default function RelationshipView({ rel, graph, refs, onNavigate, onAsk }
           <ClaimColumn side="B" claim={rel.claim_b} cited={rel.cited?.b} n={nB} insufficient={insufficient} onNavigate={onNavigate} />
         </div>
       </Section>
+
+      {rel.reviews?.length > 0 && (
+        <Section title="Classification reviews" note="original label kept; proposals are never applied automatically">
+          <ReviewList reviews={rel.reviews} labelOf={labelOf} />
+        </Section>
+      )}
 
       <Section title="Study conditions" note="compared by code; differences inform, never decide">
         <ConditionDiffTable diff={rel.condition_diff} a={`Node ${nA ?? 'A'}`} b={`Node ${nB ?? 'B'}`} />

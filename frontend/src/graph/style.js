@@ -1,11 +1,13 @@
 // Cytoscape stylesheet reproducing BioOKF Studio's canvas: small circular type-coloured nodes with a
 // hairline ink border, labels to the right, thin straight edges, faint provenance (structural) edges.
 // Note: Cytoscape ignores the alpha channel of rgba() colours, so transparency uses *-opacity properties.
-import { IMPACTS, NODE_KINDS, RELATIONSHIPS } from './vocab.js'
+import { IMPACTS, INDEPENDENCE, NODE_KINDS, RELATIONSHIPS, REVIEW } from './vocab.js'
 
 const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif'
 const INK = '#1d232a'
 const DASH = { dashed: [5, 4], dotted: [1.5, 3] }
+export const QUESTION_IMAGE = '/logo.svg'
+const QUESTION_HALO = '#884b30' // the logo's fur colour
 
 export function buildStyle() {
   const style = [
@@ -38,7 +40,18 @@ export function buildStyle() {
     {
       selector: 'node.question',
       style: {
-        'background-color': NODE_KINDS.question.color,
+        // The central question is drawn as the ResearchLens logo (public/logo.svg). Its artwork fills ~72% of the
+        // square viewBox, so the image is scaled past the node box; the node keeps its size for layout and clicks.
+        'background-color': '#ffffff',
+        'background-opacity': 0,
+        'background-image': QUESTION_IMAGE,
+        'background-fit': 'none', // 'contain' would ignore background-width/height
+        'background-width': '190%',
+        'background-height': '190%',
+        'background-clip': 'none',
+        'background-image-containment': 'over',
+        'bounds-expansion': 14,
+        'border-width': 0,
         'border-opacity': 1,
         'font-size': 15,
         'font-weight': 600,
@@ -47,7 +60,7 @@ export function buildStyle() {
         'text-valign': 'bottom',
         'text-halign': 'center',
         'text-margin-x': 0,
-        'text-margin-y': 8,
+        'text-margin-y': 16,
         'text-background-color': '#fafaf9',
         'text-background-opacity': 0.85,
         'text-background-padding': 3,
@@ -99,6 +112,11 @@ export function buildStyle() {
     },
     { selector: 'node.hover', style: { 'border-width': 1.6, 'border-opacity': 1 } },
     { selector: 'node:selected', style: { 'border-width': 2.2, 'border-color': '#20242a', 'border-opacity': 1 } },
+    // The logo has no ring: hover/selection show a soft halo instead.
+    {
+      selector: 'node.question.hover, node.question:selected',
+      style: { 'border-width': 0, 'underlay-color': QUESTION_HALO, 'underlay-opacity': 0.16, 'underlay-padding': 7, 'underlay-shape': 'ellipse' },
+    },
     { selector: 'node.match', style: { 'font-weight': 650 } },
 
     // ---- edges ----
@@ -142,9 +160,19 @@ export function buildStyle() {
     { selector: 'edge.evidence.hover', style: { width: 2.6, 'line-opacity': 1 } },
     { selector: 'edge.evidence:selected', style: { width: 3, 'line-opacity': 1, 'z-index': 9 } },
   )
+  // Independence not established (shared/unknown authorship behind a supportive label): amber halo, label kept.
+  style.push(
+    { selector: 'edge.evidence.indep-review', style: { 'underlay-color': INDEPENDENCE.color, 'underlay-opacity': 0.3, 'underlay-padding': 3 } },
+    { selector: 'edge.evidence.under-review', style: {
+      label: 'Review', 'font-size': 7, color: REVIEW.color, 'text-rotation': 'autorotate',
+      'text-background-color': '#ffffff', 'text-background-opacity': 0.9, 'text-background-padding': 1.5 } },
+  )
   for (const [key, imp] of Object.entries(IMPACTS)) {
     style.push({ selector: `node.impact-${key}`, style: { 'border-width': 3, 'border-color': imp.color, 'border-opacity': 1 } })
   }
+  style.push({ selector: 'node.impact-strengthens-review', style: {
+    'border-width': 3, 'border-color': IMPACTS.strengthens.color, 'border-style': 'dashed', 'border-opacity': 1,
+    'underlay-color': INDEPENDENCE.color, 'underlay-opacity': 0.3, 'underlay-padding': 4 } })
   style.push(
     { selector: '.faded', style: { opacity: 0.18, 'text-opacity': 0.18 } },
     { selector: '.hidden', style: { display: 'none' } },

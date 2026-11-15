@@ -134,7 +134,7 @@ describe('workspace integration', () => {
     expect(onEdit).toHaveBeenCalled()
     cleanup()
     panel({ workspace: ws(), onEditQuestion: onEdit, canEditQuestion: false })
-    expect(screen.getByRole('button', { name: 'Change question…' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Change Question' }).disabled).toBe(true)
   })
 
   it('re-analysis starts only when the user clicks it, with the pending papers', () => {

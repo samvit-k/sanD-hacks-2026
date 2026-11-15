@@ -67,21 +67,21 @@ function panel(props = {}) {
 }
 
 describe('AssistantPanel', () => {
-  it('defaults to "Add to library"; evaluating must be chosen explicitly', () => {
+  it('defaults to "Add to Library"; evaluating must be chosen explicitly', () => {
     const uploads = idleUploads()
     panel({ uploads })
-    expect(screen.getByRole('radio', { name: 'Add to library' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('radio', { name: 'Add to Library' }).getAttribute('aria-checked')).toBe('true')
     const file = new File(['%PDF'], 'a.pdf', { type: 'application/pdf' })
     fireEvent.change(screen.getByTestId('pdf-input'), { target: { files: [file] } })
     expect(uploads.add).toHaveBeenLastCalledWith([file], 'library')
-    fireEvent.click(screen.getByRole('radio', { name: 'Evaluate a new paper' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Evaluate a New Paper' }))
     fireEvent.change(screen.getByTestId('pdf-input'), { target: { files: [file] } })
     expect(uploads.add).toHaveBeenLastCalledWith([file], 'evaluate')
   })
 
   it('disables evaluation until a library exists', () => {
     panel({ hasLibrary: false })
-    expect(screen.getByRole('radio', { name: 'Evaluate a new paper' }).disabled).toBe(true)
+    expect(screen.getByRole('radio', { name: 'Evaluate a New Paper' }).disabled).toBe(true)
   })
 
   it('disables uploads and chat on offline/sample data, with the reason', () => {
@@ -135,5 +135,41 @@ describe('Inspector → assistant', () => {
     expect(btn.disabled).toBe(false)
     fireEvent.click(btn)
     expect(onAsk).toHaveBeenCalledWith({ kind: 'relationship', id: 1 })
+  })
+})
+
+describe('minimizing chat exchanges', () => {
+  const Q1 = { id: 1, role: 'user', content: 'Does Paper D disprove Paper A?', context: null }
+  const A1 = { ...ANSWER, id: 2, content: 'First answer text.' }
+  const Q2 = { id: 3, role: 'user', content: 'What about long-term retention?', context: null }
+  const A2 = { ...ANSWER, id: 4, content: 'Second answer text.' }
+  const uploads = { items: [], busy: false, add: vi.fn(() => ({ accepted: [], rejected: [] })), retry: vi.fn(),
+    canRetry: () => false, checkAgain: vi.fn(), retryRefresh: vi.fn(), dismiss: vi.fn() }
+  const show = () => render(
+    <AssistantPanel open onClose={() => {}} uploads={uploads} canUpload hasLibrary chatEnabled uploadBlockedReason=""
+      chatBlockedReason="" context={null} contextLabel={() => ''} onClearContext={() => {}} onReference={() => {}}
+      focusTick={0} chat={{ messages: [Q1, A1, Q2, A2], pending: null, error: null, send: vi.fn(), retry: vi.fn() }} />)
+
+  it('each question can be minimized, hiding only its own answer, and expanded again', () => {
+    show()
+    const [first] = screen.getAllByRole('button', { name: 'Minimize' })
+    fireEvent.click(first)
+    expect(screen.queryByText('First answer text.')).toBeNull()
+    expect(screen.getByText('Second answer text.')).toBeTruthy()          // the other exchange is untouched
+    expect(screen.getByText('Does Paper D disprove Paper A?')).toBeTruthy() // the question stays (one line)
+    expect(screen.getByText('Answer minimized')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(screen.getByText('First answer text.')).toBeTruthy()
+  })
+
+  it('Minimize All collapses every exchange and Expand All restores them', () => {
+    show()
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize All' }))
+    expect(screen.queryByText('First answer text.')).toBeNull()
+    expect(screen.queryByText('Second answer text.')).toBeNull()
+    expect(screen.getAllByText('Answer minimized')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand All' }))
+    expect(screen.getByText('First answer text.')).toBeTruthy()
+    expect(screen.getByText('Second answer text.')).toBeTruthy()
   })
 })

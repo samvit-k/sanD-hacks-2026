@@ -3,11 +3,22 @@ import { useEffect, useRef, useState } from 'react'
 import { computeLayout } from '../graph/layout.js'
 import { buildStyle } from '../graph/style.js'
 import { buildElements } from '../graph/toElements.js'
+import { createAutoFit, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LEGEND_EVENT } from '../graph/viewport.js'
 import { NODE_KINDS, RELATIONSHIPS } from '../graph/vocab.js'
 import ZoomControls from './ZoomControls.jsx'
 
 const DOT_SPACING = 22
-const LEGEND_NUDGE = { x: 110, y: -30 } // initial view shifts away from the bottom-left legend card
+const VIEW_ANIMATION_MS = 220
+
+/** The open legend card's rectangle relative to the canvas container (null when collapsed or absent). */
+function legendRect(container) {
+  const card = container?.closest('.stage')?.querySelector('.legend')
+  if (!card) return null
+  const c = container.getBoundingClientRect()
+  const r = card.getBoundingClientRect()
+  return { left: r.left - c.left, right: r.right - c.left, top: r.top - c.top, bottom: r.bottom - c.top,
+    width: r.width, height: r.height }
+}
 
 /** Map an app selection ({kind, id}) to a Cytoscape element id. */
 export function elementIdFor(selection) {
@@ -37,7 +48,9 @@ function tipText(ele) {
   const d = ele.data()
   if (ele.isEdge()) {
     const rel = RELATIONSHIPS[d.label]
-    return `${d.insufficient_evidence ? 'Insufficient evidence' : rel?.label ?? 'Relationship'} · click for evidence`
+    const qual = d.independence === 'review' ? ' · independence not established' : ''
+    const review = d.under_review ? ' · reclassification proposed' : ''
+    return `${d.insufficient_evidence ? 'Insufficient evidence' : `${rel?.label ?? 'Relationship'}${qual}`}${review} · click for evidence`
   }
   const kind = NODE_KINDS[d.kind]?.label ?? 'Node'
   return d.kind === 'question' ? `${kind} · click to read it` : `${kind} · ${d.displayLabel}`
@@ -47,6 +60,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
   const containerRef = useRef(null)
   const cyRef = useRef(null)
   const posRef = useRef({})
+  const fitRef = useRef(null)
   const onSelectRef = useRef(onSelect)
   const [zoom, setZoom] = useState(1)
   const [tip, setTip] = useState(null)
@@ -57,8 +71,8 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
     const cy = cytoscape({
       container: containerRef.current,
       style: buildStyle(),
-      minZoom: 0.2,
-      maxZoom: 3,
+      minZoom: GRAPH_MIN_ZOOM,
+      maxZoom: GRAPH_MAX_ZOOM,
       wheelSensitivity: 0.25,
       boxSelectionEnabled: false,
       selectionType: 'single',
@@ -80,9 +94,26 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
       })
     }
     cy.on('viewport', onViewport)
-    // Keep Cytoscape's canvas in sync when the container resizes (e.g. sidebar collapse/expand).
-    const resizer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => cy.resize()) : null
+    // Viewport policy (graph/viewport.js): follow the available space until the user pans/zooms by hand.
+    const autofit = createAutoFit(cy, () => legendRect(containerRef.current))
+    fitRef.current = autofit
+    // Observe the CONTAINER (sized by CSS, e.g. when the Assistant panel or sidebar opens/closes) — not
+    // Cytoscape's own canvas — and handle the change on the next frame, so cy.resize() inside the handler can
+    // never feed back into this observer within the same layout pass. Bursts collapse into one update.
+    let resizeFrame = 0
+    const resizer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+        cancelAnimationFrame(resizeFrame)
+        resizeFrame = requestAnimationFrame(() => autofit.resized(VIEW_ANIMATION_MS))
+      })
+      : null
     resizer?.observe(containerRef.current)
+    let legendFrame = 0
+    const onLegend = () => {
+      cancelAnimationFrame(legendFrame)
+      legendFrame = requestAnimationFrame(() => autofit.refitIfFollowing(VIEW_ANIMATION_MS))
+    }
+    window.addEventListener(LEGEND_EVENT, onLegend)
     cy.on('tap', (evt) => {
       if (evt.target === cy) onSelectRef.current(null)
     })
@@ -106,7 +137,12 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
     })
     return () => {
       cancelAnimationFrame(frame)
+      cancelAnimationFrame(resizeFrame)
+      cancelAnimationFrame(legendFrame)
+      window.removeEventListener(LEGEND_EVENT, onLegend)
       resizer?.disconnect()
+      autofit.dispose()
+      fitRef.current = null
       cy.destroy()
       cyRef.current = null
     }
@@ -132,16 +168,14 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
       cy.add(edges)
     })
     if (first) {
-      cy.fit(undefined, 90)
-      if (cy.zoom() > 1.25) cy.zoom(1.25)
-      cy.center()
-      // The legend starts open only on wide screens (Legend.jsx); nudge the view away from it only then.
-      if (!window.matchMedia?.('(max-width: 1100px)').matches) cy.panBy(LEGEND_NUDGE)
+      fitRef.current?.fit(0) // whole graph, clear of the legend card
     } else {
       cy.nodes().forEach((n) => {
         const p = pos[n.id()]
         if (p) n.animate({ position: p }, { duration: 450, easing: 'ease-out-cubic' })
       })
+      const t = setTimeout(() => fitRef.current?.refitIfFollowing(VIEW_ANIMATION_MS), 480)
+      return () => clearTimeout(t)
     }
   }, [graph])
 
@@ -161,7 +195,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
     cy.batch(() => {
       cy.elements().removeClass('faded nbr match')
       cy.elements(':selected').unselect()
-      cy.nodes().removeClass(Object.keys({ challenges: 1, qualifies: 1, strengthens: 1, leaves_unresolved: 1 }).map((k) => `impact-${k}`).join(' '))
+      cy.nodes().removeClass(['challenges', 'qualifies', 'strengthens', 'strengthens-review', 'leaves_unresolved'].map((k) => `impact-${k}`).join(' '))
       for (const [nodeId, impact] of Object.entries(highlight ?? {})) cy.getElementById(nodeId).addClass(`impact-${impact}`)
       if (matches?.size) {
         cy.nodes().forEach((n) => {
@@ -181,6 +215,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
       }
     })
     if (sel && sel.nonempty() && selection?.focus) {
+      fitRef.current?.userAdjusted() // focusing an item is a deliberate view: later resizes keep it
       // Centre the selection in the canvas area NOT covered by the floating inspector card.
       const card = containerRef.current?.closest('.stage')?.querySelector('.inspector')
       const cardW = card ? card.offsetWidth + 16 : 0
@@ -201,10 +236,11 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
   const zoomBy = (factor) => {
     const cy = cyRef.current
     if (!cy) return
+    fitRef.current?.userAdjusted()
     const center = { x: cy.width() / 2, y: cy.height() / 2 }
     cy.animate({ zoom: { level: cy.zoom() * factor, renderedPosition: center } }, { duration: 160 })
   }
-  const fit = () => cyRef.current?.animate({ fit: { eles: cyRef.current.elements(':visible'), padding: 80 } }, { duration: 300 })
+  const fit = () => fitRef.current?.fit(300) // refit (clear of the legend) and resume following the canvas size
   const relayout = () => {
     posRef.current = {}
     const cy = cyRef.current

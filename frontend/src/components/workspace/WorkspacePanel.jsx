@@ -82,7 +82,7 @@ export default function WorkspacePanel({
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Research workspace">
       <div className="sb-head">
-        <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+        <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
         <span className="sb-brand">ResearchLens</span>
         <button type="button" className="icon-btn" onClick={onToggle} aria-label={collapsed ? 'Expand workspace' : 'Collapse workspace'}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d={collapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M10 3.5 5.5 8 10 12.5'} /></svg>
@@ -106,7 +106,7 @@ export default function WorkspacePanel({
               <button type="button" className={workspace?.question ? 'link-btn q-edit' : 'btn btn-sm q-set'}
                 disabled={!canEditQuestion} onClick={onEditQuestion}
                 title={canEditQuestion ? undefined : 'Not available while papers are being analyzed or offline.'}>
-                {workspace?.question ? 'Change question…' : 'Set the central question'}
+                {workspace?.question ? 'Change Question' : 'Set the central question'}
               </button>
             )}
           </div>

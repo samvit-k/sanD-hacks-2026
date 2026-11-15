@@ -182,7 +182,10 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
   const matches = useMemo(() => matchingIds(graph, query), [graph, query])
   const highlight = useMemo(() => {
     const out = {}
-    for (const i of impact?.impacts ?? []) out[`claim:${i.prior_claim.id}`] = i.impact
+    // A supportive impact whose independence is not established gets its own (qualified) highlight.
+    for (const i of impact?.impacts ?? []) {
+      out[`claim:${i.prior_claim.id}`] = i.independence?.level === 'review' ? `${i.impact}-review` : i.impact
+    }
     return out
   }, [impact])
 
@@ -262,7 +265,7 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
           {graph && <Legend />}
           {graph && (
             <Inspector
-              graph={graph} workspace={workspace} selection={selection} refs={refs}
+              graph={graph} workspace={workspace} selection={selection} refs={refs} impact={impact}
               onNavigate={navigate} onClose={() => setSelection(null)} onAsk={chatEnabled ? askAbout : undefined}
               onEditQuestion={canEditQuestion ? () => setQuestionOpen(true) : undefined}
             />
@@ -310,7 +313,7 @@ function NoProjects({ onCreate, switcher }) {
     <div className="app app-empty">
       <aside className="sidebar" aria-label="Research workspace">
         <div className="sb-head">
-          <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+          <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
           <span className="sb-brand">ResearchLens</span>
         </div>
         <div className="sb-body">{switcher}</div>
@@ -346,7 +349,7 @@ function ConnectionProblem({ maintenance, error, onRetry, onDemo }) {
     <div className="app app-empty">
       <aside className="sidebar" aria-label="Research workspace">
         <div className="sb-head">
-          <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+          <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
           <span className="sb-brand">ResearchLens</span>
         </div>
       </aside>

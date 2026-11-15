@@ -7,6 +7,8 @@ import { ModelBox, VerifiedQuote } from '../inspector/parts.jsx'
 
 const TOKEN_SPLIT = /(\[\[(?:q|paper:[a-z0-9][a-z0-9-]*|claim:\d+|rel:\d+)\]\])/g
 
+const lowerFirst = (t) => (t ? t[0].toLowerCase() + t.slice(1) : '')
+
 export function referenceLabel(ref) {
   if (!ref) return null
   if (ref.kind === 'question') return 'Central Question'
@@ -35,18 +37,31 @@ export function RichText({ text, references = {}, onReference }) {
   })
 }
 
-export default function ChatMessage({ message, contextLabel, onReference, stale = false }) {
+/** Minimize/expand control for one exchange (a question and the answer to it). */
+function MinimizeButton({ collapsed, onToggle }) {
+  return (
+    <button type="button" className="chat-min-btn" onClick={onToggle} aria-expanded={!collapsed}
+      title={collapsed ? 'Show this answer again' : 'Minimize this question and its answer'}>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d={collapsed ? 'M4.5 6.5 8 10l3.5-3.5' : 'M4.5 9.5 8 6l3.5 3.5'} /></svg>
+      {collapsed ? 'Expand' : 'Minimize'}
+    </button>
+  )
+}
+
+export default function ChatMessage({ message, contextLabel, onReference, stale = false, collapsed = false, onToggle = null }) {
   const era = stale ? ' stale' : ''
   if (message.role === 'status') {
     return <div className={`chat-status ${message.tone ?? ''}`} role="status">{message.content}</div>
   }
   if (message.role === 'user') {
     return (
-      <div className={`chat-row user${era}`}>
+      <div className={`chat-row user${era}${collapsed ? ' collapsed' : ''}`} data-testid="user-message">
         <div className="chat-bubble">
           {message.context && contextLabel && <div className="chat-about">About: {contextLabel(message.context)}</div>}
-          {message.content}
+          <div className="chat-prompt" title={collapsed ? message.content : undefined}>{message.content}</div>
         </div>
+        {onToggle && <MinimizeButton collapsed={collapsed} onToggle={onToggle} />}
+        {collapsed && <div className="chat-minimized">Answer minimized</div>}
       </div>
     )
   }
@@ -59,6 +74,14 @@ export default function ChatMessage({ message, contextLabel, onReference, stale 
   }
   return (
     <div className={`chat-row assistant${era}`} data-testid="assistant-message">
+      {message.integrity && (
+        // Shown BEFORE the answer: the server re-checked this stored answer against today's author information.
+        <div className="indep indep-review chat-integrity" role="note" data-testid="chat-integrity">
+          <div className="indep-head">⚠ {message.integrity.headline}</div>
+          <p>This answer presents related findings as confirmation, but {lowerFirst(message.integrity.detail)}</p>
+          <div className="insp-small">{message.integrity.note}</div>
+        </div>
+      )}
       <ModelBox title="Research assistant (Gemini) — interpretation, not a verdict">
         {message.insufficient_evidence && <div className="chat-flag">Insufficient evidence</div>}
         <p className="chat-text"><RichText text={message.content} references={message.references} onReference={onReference} /></p>

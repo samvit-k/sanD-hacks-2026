@@ -84,7 +84,7 @@ describe('App data provenance', () => {
       return json(404, { detail: 'none' })
     })
     render(<App />)
-    await screen.findByText(/citation integrity passed/)
+    await screen.findByText(/Citation Integrity Passed/)
     expect(screen.queryByText('Sample data (fictional)')).toBeNull()
   })
 })

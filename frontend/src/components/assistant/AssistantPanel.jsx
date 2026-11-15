@@ -7,12 +7,12 @@ import ChatMessage from './ChatMessage.jsx'
 
 const MODES = {
   library: {
-    label: 'Add to library',
+    label: 'Add to Library',
     help: 'Foundational papers. Claims are extracted and compared with the rest of the library. Several PDFs at once is fine.',
     stages: 'extracting claims, comparing with the library',
   },
   evaluate: {
-    label: 'Evaluate a new paper',
+    label: 'Evaluate a New Paper',
     help: 'Checks how ONE new paper strengthens, challenges or qualifies the existing library (impact analysis).',
     stages: 'extracting claims, comparing, assessing impact',
   },
@@ -114,7 +114,7 @@ function UploadSection({ uploads, canUpload, blockedReason, hasLibrary }) {
 
   return (
     <section className="as-section" aria-label="Upload PDFs">
-      <div className="sb-section">Add papers</div>
+      <div className="sb-section">Add Papers</div>
       <div className="seg" role="radiogroup" aria-label="Upload purpose">
         {Object.entries(MODES).map(([key, m]) => (
           <button key={key} type="button" role="radio" aria-checked={mode === key}
@@ -172,6 +172,8 @@ export function withQuestionDividers(messages, currentQuestion) {
 function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLabel, onClearContext, onReference, focusTick,
   currentQuestion, evidenceNote }) {
   const [draft, setDraft] = useState('')
+  // Exchanges the user minimized, keyed by the id of the question that starts them (view state only).
+  const [collapsed, setCollapsed] = useState(() => new Set())
   const listRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -191,9 +193,28 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
     if (ok) onClearContext?.()
   }
 
+  const promptIds = chat.messages.filter((m) => m.role === 'user').map((m) => m.id)
+  const allCollapsed = promptIds.length > 0 && promptIds.every((id) => collapsed.has(id))
+  const toggle = (id) => setCollapsed((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(promptIds))
+  // An assistant reply belongs to the nearest question above it; a divider or the next question ends the exchange.
+  let hiding = false
+
   return (
     <section className="as-chat" aria-label="Research assistant chat">
-      <div className="sb-section">Ask your research</div>
+      <div className="sb-section chat-head">
+        Ask your research
+        {promptIds.length > 0 && (
+          <button type="button" className="link-btn chat-min-all" onClick={toggleAll}>
+            {allCollapsed ? 'Expand All' : 'Minimize All'}
+          </button>
+        )}
+      </div>
       <div className="chat-list" ref={listRef} aria-live="polite">
         {chat.messages.length === 0 && !chat.pending && (
           <div className="chat-empty">
@@ -205,12 +226,22 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
             ))}
           </div>
         )}
-        {withQuestionDividers(chat.messages, currentQuestion).map((row) => (row.divider ? (
-          <div key={row.key} className="chat-divider" role="separator"><span>{row.text}:</span> {row.question}</div>
-        ) : (
-          <ChatMessage key={row.message.id} message={row.message} stale={row.stale} contextLabel={contextLabel}
-            onReference={onReference} />
-        )))}
+        {withQuestionDividers(chat.messages, currentQuestion).map((row) => {
+          if (row.divider) {
+            hiding = false
+            return <div key={row.key} className="chat-divider" role="separator"><span>{row.text}:</span> {row.question}</div>
+          }
+          const m = row.message
+          if (m.role === 'user') {
+            hiding = collapsed.has(m.id)
+            return (
+              <ChatMessage key={m.id} message={m} stale={row.stale} contextLabel={contextLabel} onReference={onReference}
+                collapsed={hiding} onToggle={() => toggle(m.id)} />
+            )
+          }
+          if (hiding && m.role === 'assistant') return null
+          return <ChatMessage key={m.id} message={m} stale={row.stale} contextLabel={contextLabel} onReference={onReference} />
+        })}
         {chat.pending && (
           <>
             <div className="chat-row user pending">
@@ -261,9 +292,10 @@ export default function AssistantPanel({
   context, contextLabel, onClearContext, onReference, focusTick, currentQuestion = null, evidenceNote = '',
 }) {
   return (
-    <aside id="assistant-panel" className="assistant" hidden={!open} aria-label="Research assistant">
+    <aside id="assistant-panel" className="assistant" hidden={!open} aria-label="Research Assistant">
       <div className="sb-head as-head">
-        <span className="sb-brand">Research assistant</span>
+        <img className="brand-mark" src="/assistant.svg" alt="" aria-hidden="true" />
+        <span className="sb-brand">Research Assistant</span>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close research assistant">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
         </button>

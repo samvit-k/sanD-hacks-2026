@@ -5,17 +5,96 @@ import { CONDITION_LABELS, DIFF_FIELDS, RELATIONSHIPS, SECTION_LABELS } from '..
 
 const NOT_REPORTED = 'not reported'
 
+const KIND_LABELS = { caption: 'Caption', table: 'Table / figure text', footnote: 'Footnote' }
+const ARTIFACT_LABELS = {
+  caption_inside: 'caption text', footnote_glued: 'footnote text', word_fragment: 'a split word',
+  table_inside_prose: 'table values', cut_at_page_end: 'a sentence cut at the page end',
+}
+
+/** How far the quotation's wording can be trusted as-is (the citation itself is always verified). */
+export function quoteProvenance(quote) {
+  const artifacts = (quote.artifacts ?? []).map((a) => ARTIFACT_LABELS[a] ?? a)
+  if (quote.text_check === 'joined_blocks') {
+    return { tone: 'check', text: `Joined across PDF layout blocks — verify the wording on p. ${quote.page}` }
+  }
+  if (artifacts.length) {
+    return { tone: 'check', text: `May contain PDF layout artifacts (${artifacts.join(', ')}) — verify on p. ${quote.page}` }
+  }
+  if (quote.text_check === 'single_block') {
+    return { tone: 'ok', text: 'Source text from one PDF text block (normalized ligatures, hyphens and spacing)' }
+  }
+  return null
+}
+
 export function VerifiedQuote({ quote, paperTitle }) {
+  const prov = quoteProvenance(quote)
   return (
-    <figure className="vq">
+    <figure className={`vq${prov?.tone === 'check' ? ' vq-check' : ''}`}>
       <blockquote>{quote.text}</blockquote>
       <figcaption>
         <span className="vq-ok" aria-hidden="true">✓</span> Verified source sentence · p. {quote.page}
         {quote.section && quote.section !== 'front' ? ` · ${SECTION_LABELS[quote.section] ?? quote.section}` : ''}
+        {KIND_LABELS[quote.kind] ? ` · ${KIND_LABELS[quote.kind]}` : ''}
         {' · '}<code title="Sentence ID (citation)">{quote.id}</code>
+        {prov && <div className={`vq-prov ${prov.tone}`} data-testid="quote-provenance">{prov.text}</div>}
         {paperTitle ? <div className="vq-paper">{paperTitle}</div> : null}
       </figcaption>
     </figure>
+  )
+}
+
+/** Dependence between the two papers behind a relationship or impact. `independence` comes from the server:
+ *  {status, shared, possible, summary, level: 'review' | 'note' | null, headline, basis_sentence_ids}. */
+export function IndependenceNotice({ independence }) {
+  if (!independence) return null
+  const { level, headline, summary, basis_sentence_ids: basis } = independence
+  const shared = independence.status === 'shared_authors' || independence.status === 'possible_shared_authors'
+  if (!level && !shared) return null
+  return (
+    <div className={`indep indep-${level ?? 'context'}`} role="note" data-testid="independence">
+      {headline && <div className="indep-head">{level === 'review' ? '⚠ ' : ''}{headline}</div>}
+      <p>{summary}</p>
+      {basis?.length > 0 && (
+        <div className="insp-small">
+          Author lists parsed from the papers’ first-page text ({basis.map((b, i) => <code key={b}>{i ? ', ' : ''}{b}</code>)}).
+          Shared authorship links studies but does not prove shared data; no detected overlap would not prove independence.
+        </div>
+      )}
+    </div>
+  )
+}
+
+const REVIEWER = {
+  automated: 'Automated check',
+  model: 'AI model recommendation — not a human decision',
+  human: 'Human review',
+}
+const REVIEW_STATUS = { proposed: 'Proposed — not applied', accepted: 'Accepted', rejected: 'Rejected' }
+
+/** Classification audit trail. Original labels stay unchanged; proposals are never applied automatically. */
+export function ReviewList({ reviews, labelOf }) {
+  if (!reviews?.length) return null
+  return (
+    <ul className="review-list" data-testid="reviews">
+      {reviews.map((r) => (
+        <li key={r.id} className={`review review-${r.status}`}>
+          <div className="review-head">
+            <span className={`review-status ${r.status}`}>{REVIEW_STATUS[r.status] ?? r.status}</span>
+            <span className="review-type">{REVIEWER[r.reviewer_type] ?? r.reviewer_type}</span>
+          </div>
+          <div>
+            {r.proposed_label
+              ? <>Proposed: <b>{labelOf(r.original_label)}</b> → <b>{labelOf(r.proposed_label)}</b></>
+              : <>Note on <b>{labelOf(r.original_label)}</b> (no relabel proposed)</>}
+          </div>
+          <p className="review-reason">{r.reason}</p>
+          <div className="insp-small">
+            By {r.reviewer}{r.decided_by ? ` · decided by ${r.decided_by}` : ''}
+            {r.decision_note ? ` — ${r.decision_note}` : ''}
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -42,13 +121,16 @@ export function Section({ title, children, note }) {
   )
 }
 
-export function RelPill({ label, insufficient }) {
+/** `qualifier` ('review' | 'note' | null) qualifies a supportive label whose independence is not established,
+ *  so "Supports" is never shown unqualified next to a review-needed status. */
+export function RelPill({ label, insufficient, qualifier = null }) {
   const rel = RELATIONSHIPS[label]
   if (insufficient) return <span className="rel-pill rel-pill-warn">Insufficient evidence</span>
   return (
-    <span className="rel-pill" style={{ '--rel': rel?.color ?? '#8e8ea0' }}>
+    <span className={`rel-pill${qualifier === 'review' ? ' rel-pill-review' : ''}`} style={{ '--rel': rel?.color ?? '#8e8ea0' }}>
       <span className="rel-swatch" data-line={rel?.line ?? 'solid'} aria-hidden="true" />
       {rel?.label ?? label}
+      {qualifier === 'review' && <span className="rel-qual"> · independence not established</span>}
     </span>
   )
 }

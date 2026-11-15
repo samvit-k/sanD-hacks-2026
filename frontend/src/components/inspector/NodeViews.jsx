@@ -1,15 +1,48 @@
 // Inspector views for nodes: claim, paper, central question, discovery lead.
 import { describeExtraction } from '../../graph/extraction.js'
 import { shorten } from '../../graph/toElements.js'
-import { AccessBadge, AskButton, ConditionsList, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
+import { IMPACTS } from '../../graph/vocab.js'
+import { AccessBadge, AskButton, ConditionsList, IndependenceNotice, ModelBox, NodeChip, QuoteList, RelPill, ReviewList,
+  Section } from './parts.jsx'
 
 const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : '—')
 
-export function ClaimView({ claim, graph, refs, onNavigate, onAsk }) {
+/** Impact label, qualified when the label leans on independence that has not been established. */
+export function impactLabel(i) {
+  const base = IMPACTS[i.impact]?.label ?? i.impact
+  if (i.insufficient_evidence) return 'Insufficient evidence'
+  if (i.independence?.level === 'review') return `${base} · independence not established`
+  if (i.independence?.level === 'note') return `${base} · independence not verified`
+  return base
+}
+
+function ImpactSection({ items, refs }) {
+  if (!items.length) return null
+  return (
+    <Section title="Impact of the latest evaluated paper" note="model assessment">
+      {items.map((i) => (
+        <div key={i.id} className="impact-item" data-testid="impact-item">
+          <div className="insp-pillrow">
+            <span className={`impact-pill impact-${i.impact}${i.independence?.level === 'review' ? ' review' : ''}`}>
+              {impactLabel(i)}
+            </span>
+            <span className="insp-small">new Node {refs[`claim:${i.new_claim.id}`] ?? '?'} → earlier Node {refs[`claim:${i.prior_claim.id}`] ?? '?'}</span>
+          </div>
+          <IndependenceNotice independence={i.independence} />
+          {!i.insufficient_evidence && <ModelBox><p>{i.rationale}</p></ModelBox>}
+          <ReviewList reviews={i.reviews} labelOf={(l) => IMPACTS[l]?.label ?? l} />
+        </div>
+      ))}
+    </Section>
+  )
+}
+
+export function ClaimView({ claim, graph, refs, onNavigate, onAsk, impact = null }) {
   const n = refs[`claim:${claim.id}`]
   const rels = Object.values(graph.relationships ?? {}).filter(
     (r) => r.claim_a.id === claim.id || r.claim_b.id === claim.id,
   )
+  const impacts = (impact?.impacts ?? []).filter((i) => i.prior_claim.id === claim.id || i.new_claim.id === claim.id)
   return (
     <>
       <div className="insp-kicker">Claim · Node {n ?? '?'}</div>
@@ -27,6 +60,7 @@ export function ClaimView({ claim, graph, refs, onNavigate, onAsk }) {
         <ConditionsList conditions={claim.conditions} />
       </Section>
       <div className="insp-ask"><AskButton label="Ask about this claim" onAsk={onAsk} context={{ kind: 'claim', id: claim.id }} /></div>
+      <ImpactSection items={impacts} refs={refs} />
       <Section title={`Evidence relationships (${rels.length})`}>
         {rels.length === 0 ? <p className="insp-empty">Not matched with claims from other papers.</p> : (
           <ul className="insp-list">
@@ -35,7 +69,7 @@ export function ClaimView({ claim, graph, refs, onNavigate, onAsk }) {
               return (
                 <li key={r.id}>
                   <button type="button" className="insp-row" onClick={() => onNavigate({ kind: 'relationship', id: r.id })}>
-                    <RelPill label={r.label} insufficient={r.insufficient_evidence} />
+                    <RelPill label={r.label} insufficient={r.insufficient_evidence} qualifier={r.independence?.level} />
                     <span>with <b>Node {refs[`claim:${other.id}`] ?? '?'}</b> · {shorten(other.text, 70)}</span>
                   </button>
                 </li>
@@ -45,6 +79,19 @@ export function ClaimView({ claim, graph, refs, onNavigate, onAsk }) {
         )}
       </Section>
     </>
+  )
+}
+
+function AuthorList({ authors }) {
+  if (!authors) return null
+  return (
+    <div className="author-list" data-testid="authors">
+      <div className="insp-small"><b>Authors</b> — parsed from the paper’s first-page text
+        {authors.source_sentence_id && <> (<code>{authors.source_sentence_id}</code>)</>}</div>
+      {authors.status === 'parsed'
+        ? <p>{authors.names.join(', ')}</p>
+        : <p className="insp-empty">Could not be read reliably{authors.reason ? `: ${authors.reason}` : ''}. Shared authorship with other papers is therefore unknown.</p>}
+    </div>
   )
 }
 
@@ -72,6 +119,7 @@ export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
       {outcome?.note && (
         <ModelBox title="Gemini's note — model assessment, not evidence"><p>{outcome.note}</p></ModelBox>
       )}
+      <AuthorList authors={paper.authors} />
       <dl className="cond-list">
         <div><dt>Year</dt><dd>{paper.year ?? <i className="nr">not recorded</i>}</dd></div>
         <div><dt>DOI / link</dt><dd>{link ? <a href={link} target="_blank" rel="noreferrer">{paper.doi ?? link}</a> : <i className="nr">not recorded</i>}</dd></div>
@@ -113,7 +161,7 @@ export function QuestionView({ graph, workspace, onAsk, onEditQuestion }) {
       </p>
       <div className="insp-ask">
         <AskButton label="Ask about the central question" onAsk={onAsk} context={{ kind: 'question', id: 'q' }} />
-        {onEditQuestion && <button type="button" className="btn btn-sm" onClick={onEditQuestion}>Change question…</button>}
+        {onEditQuestion && <button type="button" className="btn btn-sm" onClick={onEditQuestion}>Change Question</button>}
       </div>
     </>
   )
