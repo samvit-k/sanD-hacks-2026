@@ -26,7 +26,7 @@ NO_TEXT_MESSAGE = (
 _STOP_HEADING = re.compile(r"^\s*(\d+\.?\s*)?(references|bibliography|works cited|literature cited)\s*$", re.I)
 _SECTION_WORDS = (
     r"abstract|introduction|background|related work|methods?|methodology|materials and methods|"
-    r"participants|procedure|results?|findings|discussion|conclusions?|limitations|"
+    r"participants|procedure|results?|findings|experiments?|discussion|conclusions?|limitations|"
     r"acknowledge?ments?|funding|keywords?|appendix"
 )
 # Lines that are headings or layout noise, removed before sentence splitting.
@@ -112,7 +112,11 @@ def extract_pages(pdf_bytes: bytes) -> List[str]:
 
 
 _SECTION_CANON = [
-    (re.compile(r"\b(results?|findings)\b", re.I), "results"),
+    # Setup-style experiment headings are methods ("3.1 Datasets and Experimental Settings") — checked first.
+    (re.compile(r"\b(experimental (settings?|setup)|settings?|setup|datasets?|implementation( details)?)\b", re.I),
+     "methods"),
+    (re.compile(r"\b(results?|findings|experiments?|performance evaluation|evaluation|empirical study)\b", re.I),
+     "results"),
     (re.compile(r"\bconclusions?\b", re.I), "conclusion"),
     (re.compile(r"\bdiscussion\b", re.I), "discussion"),
     (re.compile(r"\babstract\b", re.I), "abstract"),
@@ -121,6 +125,41 @@ _SECTION_CANON = [
     (re.compile(r"\b(introduction|background|related work)\b", re.I), "introduction"),
     (re.compile(r"\b(acknowledge?ments?|funding|appendix)\b", re.I), "other"),
 ]
+
+
+_NUMBERED = re.compile(r"^\s*\d+(\.\d+)*\.?\s+\S")
+# A section number alone on a line: "3", "5.2", "5.3.1". Not table values ("0.518", "59.93") or page numbers ("3602").
+_SECTION_NUMBER = re.compile(r"^\s*[1-9]\d?(\.\d){0,3}\.?\s*$")
+_SUBSECTION = re.compile(r"^\s*[1-9]\d?(\.\d){1,3}\.?\s+[A-Z]")  # "5.2 Performance Comparison"
+MAX_HEADING_WORDS = 6
+
+
+def _join_split_headings(lines: List[str]) -> List[str]:
+    """PyMuPDF often puts a heading's number on its own line ("3" / "Experiments"). Rejoin them ("3 Experiments")
+    so numbered-heading detection sees them. Joined only when the next line is short and the result is heading-shaped,
+    and, for a bare top-level number (which may be a page number), only when it names a known section, so body text
+    is never swallowed. Otherwise both lines are kept unchanged."""
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        nxt = lines[i + 1] if i + 1 < len(lines) else None
+        if nxt is not None and _SECTION_NUMBER.match(line) and len(nxt.split()) <= MAX_HEADING_WORDS:
+            joined = f"{line.strip()} {nxt.strip()}"
+            if heading_section(joined) or (_SUBSECTION.match(joined) and _NOISE_LINE[1].match(joined)):
+                out.append(joined)
+                i += 2
+                continue
+        out.append(line)
+        i += 1
+    return out
+
+
+def _is_subsection_heading(line: str) -> bool:
+    return bool(_SUBSECTION.match(line) and _NOISE_LINE[1].match(line))
+
+
+# Unnumbered headings still honoured after numbered ones appear (front/back matter of e.g. ACL papers).
+_UNNUMBERED_OK = {"abstract", "limitations", "other"}
 
 
 def heading_section(line: str):
@@ -138,14 +177,29 @@ def build_sentences(paper_id: str, pages: List[str]) -> List[Dict]:
     check_paper_id(paper_id)
     out: List[Dict] = []
     section = "front"
+    parent = None  # section of the last top-level numbered heading ("5 Experiments" -> results)
+    numbered_seen = False
     for page_no, page_text in enumerate(pages, start=1):
         idx = 0
         segments, buf = [], []
-        for line in page_text.splitlines():
+        for line in _join_split_headings(page_text.splitlines()):
             new_section = heading_section(line)
+            subsection = _is_subsection_heading(line)
             if new_section:
+                numbered = bool(_NUMBERED.match(line))
+                # Once the paper uses numbered headings, a bare word like "Methods" is usually a table header
+                # cell, not a section: drop the line as before but keep the current section label.
+                if numbered or not numbered_seen or new_section in _UNNUMBERED_OK:
+                    numbered_seen = numbered_seen or numbered
+                    if numbered and not subsection:
+                        parent = new_section
+                    segments.append((section, "\n".join(buf)))
+                    buf, section = [], new_section
+            elif subsection and parent and section != parent:
+                # A sub-heading naming no known section ("5.2 Performance Comparison") belongs to its parent
+                # section, e.g. back to results after "5.1 Experimental Settings" switched to methods.
                 segments.append((section, "\n".join(buf)))
-                buf, section = [], new_section
+                buf, section = [], parent
             else:
                 buf.append(line)
         segments.append((section, "\n".join(buf)))

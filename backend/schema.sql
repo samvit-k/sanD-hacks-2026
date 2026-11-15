@@ -34,6 +34,9 @@ ALTER TABLE papers ADD COLUMN IF NOT EXISTS analysis_status text NOT NULL DEFAUL
 ALTER TABLE papers DROP CONSTRAINT IF EXISTS papers_analysis_status_check;
 ALTER TABLE papers ADD CONSTRAINT papers_analysis_status_check
     CHECK (analysis_status IN ('pending', 'processing', 'complete'));
+-- Outcome of the latest claim extraction (counts, outcome, optional model note). NULL = not recorded.
+-- Diagnostic only: never evidence, never cited.
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS extraction_report jsonb;
 CREATE INDEX IF NOT EXISTS papers_content_sha256 ON papers (content_sha256);
 
 -- Sentence IDs are globally unique: '{paper_id}:p{page}_s{n}'.

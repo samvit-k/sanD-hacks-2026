@@ -1,4 +1,5 @@
 """Gemini claim extraction + strict sentence-ID validation."""
+import re
 from typing import Dict, List, Tuple
 
 from .citations import validate_single_paper_citations
@@ -26,8 +27,29 @@ Rules:
 - "text" restates the finding faithfully and concisely. Do not strengthen or generalize it.
 - Fill study conditions from the paper. Use null for anything the paper does not report.
   Never guess sample sizes, effect sizes, or significance.
-- If fewer than {max_claims} findings are clearly reported, return fewer.
+- Lines marked (table) are flattened table text. Use them only with a prose sentence stating the finding, or
+  when the claim restates exact values from one row; never infer values across misaligned columns.
+- If fewer than {max_claims} findings are clearly reported, return fewer. Return none if the paper reports no
+  finding that bears on the research question; do not stretch unrelated results to fit it. When you return
+  fewer (or none), set no_findings_note to one short sentence explaining why.
 """
+
+# Outcome of one extraction run (persisted per paper; never treated as evidence).
+OUTCOME_CLAIMS = "claims_extracted"
+OUTCOME_NONE_RETURNED = "no_relevant_findings"        # Gemini returned no candidate claims
+OUTCOME_ALL_REJECTED = "all_candidates_rejected"      # candidates returned, none passed citation validation
+MAX_NOTE_LEN = 400
+
+_NUM_TOKEN = re.compile(r"^[\d.,%±+\-*()]+$")
+
+
+def looks_like_table(text: str) -> bool:
+    """Flattened table rows: long, and mostly numeric tokens (e.g. 'LibFM 0.5661 0.2414 0.2689 ...')."""
+    tokens = text.split()
+    if len(tokens) < 8:
+        return False
+    numeric = sum(1 for t in tokens if _NUM_TOKEN.match(t))
+    return numeric / len(tokens) >= 0.4
 
 
 def select_prompt_sentences(sentences: List[Dict], limit: int) -> List[Dict]:
@@ -52,7 +74,8 @@ def build_extraction_prompt(question: str, title: str, sentences: List[Dict], ma
         question=question,
         title=title,
         truncation_note=note,
-        sentences="\n".join(f"[{s['id']}] ({s.get('section', 'front')}) {s['text']}" for s in chosen),
+        sentences="\n".join(f"[{s['id']}] ({'table' if looks_like_table(s['text']) else s.get('section', 'front')}) "
+                             f"{s['text']}" for s in chosen),
         max_claims=max_claims,
         example_id=chosen[0]["id"] if chosen else "paper:p1_s1",
     )
@@ -85,4 +108,12 @@ def validate_claims(
             "conditions": claim.conditions.model_dump(),
         })
     report["kept"] = len(kept)
+    if kept:
+        report["outcome"] = OUTCOME_CLAIMS
+    elif report["returned"] == 0:
+        report["outcome"] = OUTCOME_NONE_RETURNED
+    else:
+        report["outcome"] = OUTCOME_ALL_REJECTED
+    note = " ".join((getattr(raw, "no_findings_note", None) or "").split())
+    report["model_note"] = note[:MAX_NOTE_LEN] if note and not kept else None  # model assessment, not evidence
     return kept, report

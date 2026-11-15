@@ -213,6 +213,7 @@ def extract_claims(llm: LLM, paper_id: str, question: Optional[str] = None) -> T
         ids = [db.insert_claim(conn, c, v) for c, v in zip(kept, vectors)]
         relevance = max(float(np.dot(_unit(v), qv)) for v in vectors) if vectors else None
         db.set_relevance(conn, paper_id, relevance)
+        db.set_extraction_report(conn, paper_id, {**report, "question": question})
     log.info("extracted %s: %s", paper_id, report)
     return ids, report
 
@@ -320,6 +321,16 @@ def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str
     return build_impact_summary(paper, claims, impacts, sentences, papers, extraction=extraction, status=status)
 
 
+def extraction_warning(report: Dict) -> Optional[str]:
+    """Plain statement of why a paper produced no claims (never claims more than the run shows)."""
+    if report.get("outcome") == "no_relevant_findings":
+        return "No relevant findings identified for this question: Gemini returned no candidate findings."
+    if report.get("outcome") == "all_candidates_rejected":
+        return (f"{report.get('returned', 0)} candidate findings were returned, but none passed citation "
+                "verification, so none were added.")
+    return None
+
+
 def _extract_or_discard(llm: LLM, paper_id: str, question: str) -> Tuple[List[int], Dict]:
     """Extraction + embedding for an upload. If Gemini fails here, delete the just-ingested paper
     (cascades to its sentences/claims) so no half-processed paper is left behind."""
@@ -373,7 +384,7 @@ def add_library_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
     return {"mode": "library", "question": question, "paper": paper_detail(paper),
             "sentences": info["sentences"], "claims_kept": len(claim_ids), "extraction": report,
             "relationships_created": len(rel_ids), "library_papers": counts["library_papers"],
-            "warning": None if claim_ids else "No verifiable claims were extracted from this paper.",
+            "warning": None if claim_ids else extraction_warning(report),
             "timings_s": timings}
 
 

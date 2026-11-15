@@ -423,6 +423,11 @@ def library_dois(conn) -> List[str]:
     return [r["doi"].lower() for r in conn.execute("SELECT doi FROM papers WHERE doi IS NOT NULL").fetchall()]
 
 
+def set_extraction_report(conn, paper_id: str, report: Optional[Dict]) -> None:
+    conn.execute("UPDATE papers SET extraction_report = %s WHERE id = %s",
+                 (Jsonb(report) if report is not None else None, paper_id))
+
+
 def set_relevance(conn, paper_id: str, relevance: Optional[float]) -> None:
     conn.execute("UPDATE papers SET relevance = %s WHERE id = %s", (relevance, paper_id))
 

@@ -39,6 +39,9 @@ class ExtractedClaim(BaseModel):
 
 class ExtractionResult(BaseModel):
     claims: List[ExtractedClaim]
+    no_findings_note: Optional[str] = Field(
+        None, description="Only when returning fewer claims than asked (especially none): one sentence on why, "
+                          "e.g. the paper does not study the research question's topic. Not evidence.")
 
 
 class PairJudgment(BaseModel):

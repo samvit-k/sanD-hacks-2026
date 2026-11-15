@@ -1,4 +1,5 @@
 // Inspector views for nodes: claim, paper, central question, discovery lead.
+import { describeExtraction } from '../../graph/extraction.js'
 import { shorten } from '../../graph/toElements.js'
 import { AccessBadge, AskButton, ConditionsList, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
 
@@ -51,6 +52,7 @@ export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
   const n = refs[`paper:${paper.id}`]
   const claims = Object.values(graph.claims ?? {}).filter((c) => c.paper_id === paper.id)
   const link = paper.doi ? `https://doi.org/${paper.doi}` : paper.url
+  const outcome = describeExtraction(paper.extraction)
   return (
     <>
       <div className="insp-kicker">{paper.is_new ? 'Evaluated paper' : 'Paper'} · Node {n ?? '?'}</div>
@@ -59,7 +61,17 @@ export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
         {paper.is_new && <span className="badge badge-new">Evaluated (new)</span>}
         <AccessBadge level={paper.access_level} />
         {paper.access_level !== 'abstract' && <span className="badge">Full text</span>}
+        {outcome && <span className="badge badge-pending">{outcome.badge}</span>}
       </div>
+      {outcome && (
+        <div className={`warn-card ${outcome.kind === 'none' ? 'soft' : ''}`} role="note" data-testid="extraction-outcome">
+          <b>{outcome.title}.</b> {outcome.detail}
+          {outcome.question && <div className="insp-small">Question at the time: “{outcome.question}”</div>}
+        </div>
+      )}
+      {outcome?.note && (
+        <ModelBox title="Gemini's note — model assessment, not evidence"><p>{outcome.note}</p></ModelBox>
+      )}
       <dl className="cond-list">
         <div><dt>Year</dt><dd>{paper.year ?? <i className="nr">not recorded</i>}</dd></div>
         <div><dt>DOI / link</dt><dd>{link ? <a href={link} target="_blank" rel="noreferrer">{paper.doi ?? link}</a> : <i className="nr">not recorded</i>}</dd></div>
@@ -71,7 +83,7 @@ export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
       </dl>
       <div className="insp-ask"><AskButton label="Ask about this paper" onAsk={onAsk} context={{ kind: 'paper', id: paper.id }} /></div>
       <Section title={`Extracted claims (${claims.length})`}>
-        {claims.length === 0 ? <p className="insp-empty">No claims extracted.</p> : (
+        {claims.length === 0 ? <p className="insp-empty">{outcome ? outcome.title : 'No claims extracted.'}</p> : (
           <ul className="insp-list">
             {claims.map((c) => (
               <li key={c.id}>

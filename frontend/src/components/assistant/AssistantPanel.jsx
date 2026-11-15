@@ -1,6 +1,7 @@
 // Right-hand research assistant: PDF uploads (existing ingestion pipeline) + evidence-grounded chat.
 // Styled like the left workspace sidebar. Kept mounted while closed so drafts and state survive.
 import { useEffect, useRef, useState } from 'react'
+import { describeExtraction } from '../../graph/extraction.js'
 import { MESSAGES, STATUS } from '../../state/useUploads.js'
 import ChatMessage from './ChatMessage.jsx'
 
@@ -41,6 +42,8 @@ function resultSummary(item) {
   const r = item.result
   if (!r) return null
   if (item.fromServer) return `Confirmed on the server: “${r.paper?.title ?? 'paper'}”.`
+  const outcome = describeExtraction(r.extraction)
+  if (outcome) return outcome.title
   if (r.mode === 'evaluate') {
     const c = r.counts ?? {}
     const parts = [['challenges', 'challenges'], ['qualifies', 'qualifies'], ['strengthens', 'strengthens'],
@@ -56,7 +59,7 @@ function UploadRow({ item, now, uploads }) {
     [STATUS.queued]: 'Queued',
     [STATUS.analyzing]: `Analyzing · ${mmss(now - (item.startedAt ?? now))}`,
     [STATUS.checking]: 'Checking the server…',
-    [STATUS.done]: 'Done',
+    [STATUS.done]: describeExtraction(item.result?.extraction) ? 'Analyzed' : 'Done',
     [STATUS.failed]: item.duplicate ? 'Already in the graph' : 'Failed',
     [STATUS.unknown]: 'Result not confirmed',
   }[item.status]
@@ -71,8 +74,10 @@ function UploadRow({ item, now, uploads }) {
         <b>{label}</b>
         {item.status === STATUS.analyzing && <span> — {MODES[item.mode].stages}; usually 20–80 s</span>}
       </div>
-      {item.status === STATUS.done && <div className="up-detail">{resultSummary(item)}</div>}
-      {item.message && <div className="up-detail">{item.message}</div>}
+      {item.status === STATUS.done && (
+        <div className={`up-detail ${describeExtraction(item.result?.extraction) ? 'warn' : ''}`}>{resultSummary(item)}</div>
+      )}
+      {item.message && item.message !== item.result?.warning && <div className="up-detail">{item.message}</div>}
       {item.refreshFailed && (
         <div className="up-detail warn">{MESSAGES.refreshFailed}{' '}
           <button type="button" className="link-btn" onClick={() => uploads.retryRefresh(item.key)}>Refresh graph</button>
@@ -165,7 +170,7 @@ export function withQuestionDividers(messages, currentQuestion) {
 }
 
 function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLabel, onClearContext, onReference, focusTick,
-  currentQuestion }) {
+  currentQuestion, evidenceNote }) {
   const [draft, setDraft] = useState('')
   const listRef = useRef(null)
   const inputRef = useRef(null)
@@ -194,6 +199,7 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
           <div className="chat-empty">
             <p>Ask about your papers, claims and evidence relationships. Answers cite verified sentences from your PDFs;
               unsupported answers are withheld.</p>
+            {evidenceNote && <p className="chat-evidence-note" role="note">{evidenceNote}</p>}
             {chatEnabled && SUGGESTIONS.map((s) => (
               <button key={s} type="button" className="chip-btn" onClick={() => { setDraft(s); inputRef.current?.focus() }}>{s}</button>
             ))}
@@ -252,7 +258,7 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
 
 export default function AssistantPanel({
   open, onClose, chat, uploads, canUpload, uploadBlockedReason, hasLibrary, chatEnabled, chatBlockedReason,
-  context, contextLabel, onClearContext, onReference, focusTick, currentQuestion = null,
+  context, contextLabel, onClearContext, onReference, focusTick, currentQuestion = null, evidenceNote = '',
 }) {
   return (
     <aside id="assistant-panel" className="assistant" hidden={!open} aria-label="Research assistant">
@@ -266,7 +272,7 @@ export default function AssistantPanel({
         <UploadSection uploads={uploads} canUpload={canUpload} blockedReason={uploadBlockedReason} hasLibrary={hasLibrary} />
         <ChatSection chat={chat} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason} context={context}
           contextLabel={contextLabel} onClearContext={onClearContext} onReference={onReference} focusTick={focusTick}
-          currentQuestion={currentQuestion} />
+          currentQuestion={currentQuestion} evidenceNote={evidenceNote} />
       </div>
     </aside>
   )

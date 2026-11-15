@@ -1,3 +1,4 @@
+import { describeExtraction } from '../../graph/extraction.js'
 import { claimCounts } from '../../graph/toElements.js'
 
 // Left research workspace (BioOKF sidebar language): the central question (set / change through the
@@ -12,6 +13,7 @@ function PaperList({ graph, selection, refs, onSelectPaper }) {
       {ordered.map((p) => {
         const active = selection?.kind === 'paper' && selection.id === p.id
         const n = counts[`paper:${p.id}`] ?? 0
+        const outcome = describeExtraction(p.extraction)
         return (
           <li key={p.id}>
             <button type="button" className={`paper-card ${active ? 'active' : ''}`} onClick={() => onSelectPaper(p.id)}>
@@ -25,8 +27,11 @@ function PaperList({ graph, selection, refs, onSelectPaper }) {
                 {n} {n === 1 ? 'claim' : 'claims'} · {p.access_level === 'abstract' ? 'abstract only' : 'full text'}
                 {p.year ? ` · ${p.year}` : ''}
               </span>
-              {(p.is_new || p.access_level === 'abstract' || p.analysis_status === 'pending') && (
+              {(p.is_new || p.access_level === 'abstract' || p.analysis_status === 'pending' || outcome) && (
                 <span className="badges">
+                  {outcome && p.analysis_status !== 'pending' && (
+                    <span className="badge badge-pending" title={outcome.title}>{outcome.badge}</span>
+                  )}
                   {p.analysis_status === 'pending' && <span className="badge badge-pending">Awaiting analysis</span>}
                   {p.is_new && <span className="badge badge-new">Evaluated</span>}
                   {p.access_level === 'abstract' && <span className="badge">Abstract only</span>}

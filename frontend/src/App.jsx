@@ -8,6 +8,7 @@ import Inspector from './components/inspector/Inspector.jsx'
 import QuestionDialog from './components/question/QuestionDialog.jsx'
 import SessionSwitcher from './components/workspace/SessionSwitcher.jsx'
 import WorkspacePanel from './components/workspace/WorkspacePanel.jsx'
+import { describeExtraction } from './graph/extraction.js'
 import { DEFAULT_FILTERS, hiddenIds, matchingIds, nodeRefs } from './graph/toElements.js'
 import { useChat } from './state/useChat.js'
 import { useReanalysis } from './state/useReanalysis.js'
@@ -37,6 +38,8 @@ function uploadNote(item) {
     return { text: `Evaluated “${title}” against the library. Its impact on earlier findings is highlighted in the graph.`, tone: 'ok' }
   }
   const r = item.result ?? {}
+  const outcome = describeExtraction(r.extraction)
+  if (outcome) return { text: `Added “${title}” to the library. ${outcome.title}.`, tone: 'warn' }
   const detail = item.fromServer ? '' : ` (${r.claims_kept ?? 0} claims, ${r.relationships_created ?? 0} new relationships)`
   return { text: `Added “${title}” to the library${detail}.`, tone: 'ok' }
 }
@@ -275,6 +278,9 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
         open={assistantOpen} onClose={() => setAssistantOpen(false)} chat={chat} uploads={uploads}
         canUpload={live && !!workspace?.question && !pendingPapers.length && !reanalysis.running}
         uploadBlockedReason={uploadBlockedReason} currentQuestion={workspace?.question ?? null}
+        evidenceNote={live && (workspace?.counts?.papers ?? 0) > 0 && (workspace?.counts?.claims ?? 0) === 0
+          ? 'This project has papers but no verified findings yet, so answers will be withheld: there is nothing to cite.'
+          : ''}
         hasLibrary={!!workspace?.has_library} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason}
         context={chatContext} contextLabel={contextLabel} onClearContext={() => setChatContext(null)}
         onReference={onReference} focusTick={focusTick}

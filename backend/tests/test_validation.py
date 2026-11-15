@@ -84,7 +84,8 @@ def test_extraction_rejects_claims_with_any_bad_citation():
     assert kept[0]["sentence_ids"] == ["pa:p1_s1", "pa:p1_s2"]
     assert kept[0]["conditions"]["duration"] == "12 weeks"
     assert report == {"returned": 7, "kept": 1, "rejected_invalid_citations": 5,
-                      "rejected_empty_text": 1, "rejected_over_limit": 0}
+                      "rejected_empty_text": 1, "rejected_over_limit": 0,
+                      "outcome": "claims_extracted", "model_note": None}
     assert "pa:p3_s7" not in str(report) and "pb:p2_s1" not in str(report)  # no rejected IDs leak
 
 

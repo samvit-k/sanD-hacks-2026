@@ -657,3 +657,4 @@ button.node-chip:hover { background: var(--hover); color: var(--text); }
 .conn-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .conn-actions .link-btn { font-size: 13px; }
 .conn-card .conn-detail { margin-top: -6px; font-size: 12px; color: var(--faint); }
+.chat-evidence-note { margin: 8px 0 10px; padding: 8px 10px; border-radius: var(--r-sm); background: #fff7e6; color: #6b4a12; font-size: 12.5px; line-height: 1.45; }

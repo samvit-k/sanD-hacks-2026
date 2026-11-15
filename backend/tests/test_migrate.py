@@ -106,6 +106,8 @@ def test_migration_moves_every_table_without_changing_a_row(legacy_db):
     assert report["migrated"] and report["verified_identical"] and report["question"] == QUESTION
     sid, schema = report["session_id"], report["schema"]
     assert fingerprints(legacy_db, schema, cols) == before == report["tables"]
+    with psycopg.connect(legacy_db, row_factory=dict_row) as c:  # the only difference: a new, empty column
+        assert c.execute(f"SELECT count(*) AS n FROM {schema}.papers WHERE extraction_report IS NOT NULL").fetchone()["n"] == 0
     assert layout(legacy_db) == {"state": "migrated", "problems": [], "legacy_tables": [], "has_registry": True,
                                  "sessions": [sid]}
     s = db.get_session(sid)
