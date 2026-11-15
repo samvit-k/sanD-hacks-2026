@@ -1,6 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '../api/client.js'
 import { useChat } from './useChat.js'
 
 // Deferred promises let each test decide exactly when (and in which order) responses arrive.
@@ -16,20 +15,32 @@ const reply = (n, session = 'default') => ({ user: msg(n, 'user', `q${n}`, sessi
 
 let historyCalls
 let chatCalls
+let clients
+
+// One stable fake client per session id (like sessionApi(id)); every call records the session it was made in.
+function clientFor(sid) {
+  if (!clients.has(sid)) {
+    clients.set(sid, {
+      sessionId: sid,
+      chatHistory: vi.fn(() => {
+        const d = deferred()
+        historyCalls.push({ sid, ...d })
+        return d.promise
+      }),
+      chat: vi.fn((body) => {
+        const d = deferred()
+        chatCalls.push({ body: { ...body, sessionId: sid }, ...d })
+        return d.promise
+      }),
+    })
+  }
+  return clients.get(sid)
+}
 
 beforeEach(() => {
   historyCalls = []
   chatCalls = []
-  vi.spyOn(api, 'chatHistory').mockImplementation((sid) => {
-    const d = deferred()
-    historyCalls.push({ sid, ...d })
-    return d.promise
-  })
-  vi.spyOn(api, 'chat').mockImplementation((body) => {
-    const d = deferred()
-    chatCalls.push({ body, ...d })
-    return d.promise
-  })
+  clients = new Map()
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -41,7 +52,7 @@ async function ready(result) {
 
 describe('useChat', () => {
   it('sends a message and shows the confirmed pair exactly once', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     await ready(result)
     let p
     act(() => { p = result.current.send('Do tutors help?') })
@@ -54,7 +65,7 @@ describe('useChat', () => {
   })
 
   it('never starts overlapping requests on rapid repeated sends', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     await ready(result)
     act(() => {
       result.current.send('one')
@@ -65,7 +76,7 @@ describe('useChat', () => {
   })
 
   it('a delayed history response cannot overwrite a newer chat response', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     let p
     act(() => { p = result.current.send('fresh question') }) // history still loading
     await act(async () => { chatCalls[0].resolve(reply(5)); await p })
@@ -74,7 +85,7 @@ describe('useChat', () => {
   })
 
   it('applies only the newest of two overlapping history loads, without duplicates', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     act(() => { result.current.reload() })
     expect(historyCalls).toHaveLength(2)
     await act(async () => { historyCalls[1].resolve({ messages: [msg(1, 'user', 'q'), msg(2, 'assistant', 'a')] }) })
@@ -83,7 +94,7 @@ describe('useChat', () => {
   })
 
   it('A -> B -> A: a reply started in the first visit to A is ignored', async () => {
-    const { result, rerender } = renderHook(({ sid }) => useChat(sid), { initialProps: { sid: 'a' } })
+    const { result, rerender } = renderHook(({ sid }) => useChat(clientFor(sid)), { initialProps: { sid: 'a' } })
     await ready(result)
     let p
     act(() => { p = result.current.send('question in first A') })
@@ -99,7 +110,7 @@ describe('useChat', () => {
   })
 
   it('a delayed upload note appears only in the session that started the upload', async () => {
-    const { result, rerender } = renderHook(({ sid }) => useChat(sid), { initialProps: { sid: 'a' } })
+    const { result, rerender } = renderHook(({ sid }) => useChat(clientFor(sid)), { initialProps: { sid: 'a' } })
     await ready(result)
     rerender({ sid: 'b' })
     await ready(result)
@@ -111,7 +122,7 @@ describe('useChat', () => {
   })
 
   it('a failed send releases the guard and can be retried', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     await ready(result)
     let p
     act(() => { p = result.current.send('Do tutors help?') })
@@ -127,7 +138,7 @@ describe('useChat', () => {
   })
 
   it('keeps the pending question separate from server-confirmed assistant messages', async () => {
-    const { result } = renderHook(() => useChat('default'))
+    const { result } = renderHook(() => useChat(clientFor('default')))
     await ready(result)
     act(() => { result.current.send('Why do Nodes 4 and 7 disagree?') })
     expect(result.current.messages.some((m) => m.role === 'assistant')).toBe(false)

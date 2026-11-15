@@ -48,7 +48,9 @@ export async function sha256Hex(file) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-export function useUploads({ refresh, sessionId = 'default', onSettled, hashFile = sha256Hex } = {}) {
+/** `client`: the session-bound API client; every upload belongs to that session for its whole lifetime. */
+export function useUploads({ client, refresh, onSettled, hashFile = sha256Hex } = {}) {
+  const sessionId = client?.sessionId ?? null
   const [items, setItems] = useState([])
   const running = useRef(false)
   const checking = useRef(new Set()) // keys with a reconciliation in flight
@@ -118,7 +120,7 @@ export function useUploads({ refresh, sessionId = 'default', onSettled, hashFile
       }
       let found
       try {
-        found = await api.lookupPaper(sha256)
+        found = await client.lookupPaper(sha256)
       } catch {
         finish(key, { status: STATUS.unknown, serverState: 'unreachable', message: MESSAGES.unreachable })
         return
@@ -150,7 +152,7 @@ export function useUploads({ refresh, sessionId = 'default', onSettled, hashFile
     try {
       let result
       try {
-        result = await api.uploadPaper(item.file, item.mode)
+        result = await client.uploadPaper(item.file, item.mode)
       } catch (err) {
         if (err instanceof TimeoutError || err instanceof NetworkError) {
           // Not a failure: the server may have finished or still be working. Check this exact file.

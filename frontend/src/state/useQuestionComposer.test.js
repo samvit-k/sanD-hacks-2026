@@ -1,6 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError } from '../api/client.js'
+import { ApiError, sessionApi } from '../api/client.js'
+
+const client = sessionApi('aaaaaaaaaaaa') // the session these tests run in
 import { ORIGIN, useQuestionComposer } from './useQuestionComposer.js'
 
 function deferred() {
@@ -22,12 +24,12 @@ let saveCalls
 beforeEach(() => {
   proposeCalls = []
   saveCalls = []
-  vi.spyOn(api, 'proposeQuestion').mockImplementation((interest, previous) => {
+  vi.spyOn(client, 'proposeQuestion').mockImplementation((interest, previous) => {
     const d = deferred()
     proposeCalls.push({ interest, previous, ...d })
     return d.promise
   })
-  vi.spyOn(api, 'setQuestion').mockImplementation((question, flags) => {
+  vi.spyOn(client, 'setQuestion').mockImplementation((question, flags) => {
     const d = deferred()
     saveCalls.push({ question, flags, ...d })
     return d.promise
@@ -37,7 +39,7 @@ afterEach(() => vi.restoreAllMocks())
 
 function setup(opts = {}) {
   const onConfirmed = opts.onConfirmed ?? vi.fn()
-  const hook = renderHook((props) => useQuestionComposer(props), { initialProps: { currentQuestion: null, onConfirmed, ...opts } })
+  const hook = renderHook((props) => useQuestionComposer(props), { initialProps: { client, currentQuestion: null, onConfirmed, ...opts } })
   return { ...hook, onConfirmed }
 }
 
@@ -66,7 +68,7 @@ describe('generation and review', () => {
     expect(result.current.draft).toBe(Q1)
     expect(result.current.origin).toBe(ORIGIN.gemini)
     expect(result.current.interest).toBe(INTEREST) // the user's own words stay as typed
-    expect(api.setQuestion).not.toHaveBeenCalled()
+    expect(client.setQuestion).not.toHaveBeenCalled()
   })
 
   it('regenerate sends earlier suggestions for the same interest', async () => {
@@ -88,7 +90,7 @@ describe('generation and review', () => {
     expect(result.current.error).toEqual({ kind: 'propose', message: 'Gemini was unavailable.' })
     expect(result.current.draft).toBe('My own question?')
     expect(result.current.generating).toBe(false)
-    expect(api.setQuestion).not.toHaveBeenCalled()
+    expect(client.setQuestion).not.toHaveBeenCalled()
   })
 
   it('editing a suggestion marks it as edited; manual entry needs no Gemini', async () => {
@@ -100,7 +102,7 @@ describe('generation and review', () => {
     act(() => manual.result.current.setMode('manual'))
     act(() => manual.result.current.setDraft('Do spaced repetition apps improve vocabulary?'))
     expect(manual.result.current.origin).toBe(ORIGIN.manual)
-    expect(api.proposeQuestion).toHaveBeenCalledTimes(1)
+    expect(client.proposeQuestion).toHaveBeenCalledTimes(1)
   })
 
   it('a late suggestion never overwrites a draft the user edited meanwhile', async () => {

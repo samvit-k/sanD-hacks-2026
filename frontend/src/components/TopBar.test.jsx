@@ -46,3 +46,20 @@ describe('TopBar checks pill', () => {
     expect(screen.getByText(/citation integrity issues/)).toBeTruthy()
   })
 })
+
+describe('TopBar heading', () => {
+  const props = { graph: null, health: null, query: '', onQuery: () => {}, onPick: () => {},
+    filters: { labels: {}, insufficient: true, structural: true, discovery: true, onlyNew: false }, onFilters: () => {} }
+  it('shows the project title (follows renames) and keeps the question in the tooltip', () => {
+    const ws = { question: 'Do intelligent tutoring systems improve student learning outcomes?', counts: {} }
+    const { rerender } = render(<TopBar {...props} source="live" workspace={ws} projectTitle="Tutoring review" />)
+    const h = screen.getByTestId('project-heading')
+    expect(h.textContent).toBe('Tutoring review')
+    expect(h.getAttribute('title')).toBe(`Central question: ${ws.question}`)
+    rerender(<TopBar {...props} source="live" workspace={ws} projectTitle="Project 1" />)
+    expect(screen.getByTestId('project-heading').textContent).toBe('Project 1')
+    rerender(<TopBar {...props} source="sample" workspace={ws} />) // demo: no project
+    expect(screen.getByTestId('project-heading').textContent).toBe(ws.question)
+  })
+})
+

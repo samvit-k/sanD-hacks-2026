@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, NetworkError, TimeoutError, api } from '../api/client.js'
+import { ApiError, NetworkError, TimeoutError, sessionApi } from '../api/client.js'
+
+const client = sessionApi('aaaaaaaaaaaa') // the session these tests run in
 import { MESSAGES, STATUS, sha256Hex, useUploads } from './useUploads.js'
 
 function deferred() {
@@ -19,12 +21,12 @@ let lookups
 beforeEach(() => {
   uploads = []
   lookups = []
-  vi.spyOn(api, 'uploadPaper').mockImplementation((file, mode) => {
+  vi.spyOn(client, 'uploadPaper').mockImplementation((file, mode) => {
     const d = deferred()
     uploads.push({ file, mode, ...d })
     return d.promise
   })
-  vi.spyOn(api, 'lookupPaper').mockImplementation((sha) => {
+  vi.spyOn(client, 'lookupPaper').mockImplementation((sha) => {
     const d = deferred()
     lookups.push({ sha, ...d })
     return d.promise
@@ -35,7 +37,7 @@ afterEach(() => vi.restoreAllMocks())
 function setup({ refresh } = {}) {
   const refreshFn = refresh ?? vi.fn(async () => ({}))
   const onSettled = vi.fn()
-  const hook = renderHook(() => useUploads({ refresh: refreshFn, sessionId: 's1', onSettled, hashFile: async (f) => hashOf(f) }))
+  const hook = renderHook(() => useUploads({ client, refresh: refreshFn, onSettled, hashFile: async (f) => hashOf(f) }))
   return { ...hook, refresh: refreshFn, onSettled }
 }
 
@@ -80,7 +82,7 @@ describe('useUploads — queue and validation', () => {
     await waitFor(() => expect(item(result).status).toBe(STATUS.failed))
     expect(item(result)).toMatchObject({ duplicate: true, message: 'This PDF is already in the evidence graph' })
     expect(onSettled).toHaveBeenCalledTimes(1)
-    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ status: STATUS.failed, sessionId: 's1' }))
+    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ status: STATUS.failed, sessionId: 'aaaaaaaaaaaa' }))
   })
 })
 
@@ -98,7 +100,7 @@ describe('useUploads — success is independent of the graph refresh', () => {
     await act(async () => { await result.current.retryRefresh(item(result).key) })
     expect(item(result).refreshFailed).toBe(false)
     expect(item(result).result).toEqual(confirmed)
-    expect(api.uploadPaper).toHaveBeenCalledTimes(1)
+    expect(client.uploadPaper).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -115,7 +117,7 @@ describe('useUploads — reconciliation by exact file hash', () => {
     })
     await waitFor(() => expect(item(result).status).toBe(STATUS.done))
     expect(item(result)).toMatchObject({ fromServer: true, result: { paper: { id: 'a-123' } } })
-    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ status: STATUS.done, sessionId: 's1' }))
+    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ status: STATUS.done, sessionId: 'aaaaaaaaaaaa' }))
   })
 
   it('an unrelated new paper in the graph never marks the timed-out upload done', async () => {
@@ -144,7 +146,7 @@ describe('useUploads — reconciliation by exact file hash', () => {
     expect(lookups[1].sha).toBe('sha-a.pdf')
     await act(async () => { lookups[1].resolve({ found: true, status: 'complete', paper: { id: 'a-1' } }) })
     await waitFor(() => expect(item(result).status).toBe(STATUS.done))
-    expect(api.uploadPaper).toHaveBeenCalledTimes(1)
+    expect(client.uploadPaper).toHaveBeenCalledTimes(1)
   })
 
   it('network interruption is uncertain: it reconciles instead of failing', async () => {

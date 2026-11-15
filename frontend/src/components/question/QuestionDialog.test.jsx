@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError } from '../../api/client.js'
+import { ApiError, sessionApi } from '../../api/client.js'
+
+const client = sessionApi('aaaaaaaaaaaa') // the session these tests run in
 import AssistantPanel, { withQuestionDividers } from '../assistant/AssistantPanel.jsx'
 import WorkspacePanel from '../workspace/WorkspacePanel.jsx'
 import QuestionDialog from './QuestionDialog.jsx'
@@ -17,13 +19,13 @@ const CONFLICT = {
 const reply = (question) => Promise.resolve({ interest: INTEREST, proposal: { question, rationale: 'Names the comparison.' }, source: 'gemini', saved: false })
 
 beforeEach(() => {
-  vi.spyOn(api, 'proposeQuestion').mockImplementation(() => reply(Q1))
-  vi.spyOn(api, 'setQuestion').mockImplementation((question) => Promise.resolve({ question, pending_papers: [] }))
+  vi.spyOn(client, 'proposeQuestion').mockImplementation(() => reply(Q1))
+  vi.spyOn(client, 'setQuestion').mockImplementation((question) => Promise.resolve({ question, pending_papers: [] }))
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 function open(workspace = { question: null, counts: {} }, onConfirmed = vi.fn()) {
-  render(<QuestionDialog open workspace={workspace} onClose={() => {}} onConfirmed={onConfirmed} />)
+  render(<QuestionDialog open client={client} workspace={workspace} onClose={() => {}} onConfirmed={onConfirmed} />)
   return onConfirmed
 }
 
@@ -42,9 +44,9 @@ describe('QuestionDialog', () => {
     expect(draftBox().value).toBe(Q1)
     expect(screen.getByTestId('question-origin').textContent).toMatch(/Suggested by Gemini — review/)
     expect(screen.getByText(/Names the comparison/)).toBeTruthy()
-    expect(api.setQuestion).not.toHaveBeenCalled() // a suggestion is never saved by itself
+    expect(client.setQuestion).not.toHaveBeenCalled() // a suggestion is never saved by itself
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm question' })) })
-    expect(api.setQuestion).toHaveBeenCalledWith(Q1, {})
+    expect(client.setQuestion).toHaveBeenCalledWith(Q1, {})
     expect(onConfirmed).toHaveBeenCalledTimes(1)
   })
 
@@ -58,15 +60,15 @@ describe('QuestionDialog', () => {
     expect(draftBox().value).toBe(Q1)
     fireEvent.change(draftBox(), { target: { value: edited } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm question' })) })
-    expect(api.setQuestion).toHaveBeenCalledWith(edited, {})
+    expect(client.setQuestion).toHaveBeenCalledWith(edited, {})
   })
 
   it('regenerates a different suggestion', async () => {
     open()
     await suggest()
-    api.proposeQuestion.mockImplementation(() => reply(Q2))
+    client.proposeQuestion.mockImplementation(() => reply(Q2))
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Regenerate suggestion' })) })
-    expect(api.proposeQuestion).toHaveBeenLastCalledWith(INTEREST, [Q1])
+    expect(client.proposeQuestion).toHaveBeenLastCalledWith(INTEREST, [Q1])
     expect(draftBox().value).toBe(Q2)
   })
 
@@ -76,22 +78,22 @@ describe('QuestionDialog', () => {
     fireEvent.change(draftBox(), { target: { value: 'Do spaced repetition apps improve vocabulary retention?' } })
     expect(screen.getByTestId('question-origin').textContent).toBe('Written by you')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm question' })) })
-    expect(api.proposeQuestion).not.toHaveBeenCalled()
-    expect(api.setQuestion).toHaveBeenCalledWith('Do spaced repetition apps improve vocabulary retention?', {})
+    expect(client.proposeQuestion).not.toHaveBeenCalled()
+    expect(client.setQuestion).toHaveBeenCalledWith('Do spaced repetition apps improve vocabulary retention?', {})
   })
 
   it('a Gemini failure is shown and offers the manual route; nothing is saved', async () => {
-    api.proposeQuestion.mockImplementation(() => Promise.reject(new ApiError(503, {
+    client.proposeQuestion.mockImplementation(() => Promise.reject(new ApiError(503, {
       message: 'Gemini was unavailable (RuntimeError). No question was suggested or saved; try again, or write the question yourself.' })))
     open()
     await suggest()
     expect(screen.getByRole('alert').textContent).toMatch(/write the question yourself/)
-    expect(api.setQuestion).not.toHaveBeenCalled()
+    expect(client.setQuestion).not.toHaveBeenCalled()
     expect(screen.getByRole('radio', { name: 'Write the question myself' })).toBeTruthy()
   })
 
   it('an existing project shows the consequences and changes nothing until a choice is made', async () => {
-    api.setQuestion.mockImplementationOnce(() => Promise.reject(new ApiError(409, CONFLICT)))
+    client.setQuestion.mockImplementationOnce(() => Promise.reject(new ApiError(409, CONFLICT)))
     const onConfirmed = open({ question: OLD, counts: CONFLICT.counts })
     await suggest()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm question' })) })
@@ -102,11 +104,11 @@ describe('QuestionDialog', () => {
     expect(onConfirmed).not.toHaveBeenCalled()
     fireEvent.click(within(panel).getByRole('button', { name: 'Keep current question' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    expect(api.setQuestion).toHaveBeenCalledTimes(1)
+    expect(client.setQuestion).toHaveBeenCalledTimes(1)
   })
 
   it('"keep papers" is one explicit click; deleting papers needs a second, explicit confirmation', async () => {
-    api.setQuestion.mockImplementation((question, flags) => (flags.keepPapers || flags.reset
+    client.setQuestion.mockImplementation((question, flags) => (flags.keepPapers || flags.reset
       ? Promise.resolve({ question }) : Promise.reject(new ApiError(409, CONFLICT))))
     open({ question: OLD, counts: CONFLICT.counts })
     await suggest()
@@ -115,8 +117,8 @@ describe('QuestionDialog', () => {
     expect(screen.getByText(/permanently deletes 5 papers/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear analysis and use new question' })) })
-    expect(api.setQuestion).toHaveBeenLastCalledWith(Q1, { keepPapers: true })
-    expect(api.setQuestion.mock.calls.some(([, f]) => f.reset)).toBe(false)
+    expect(client.setQuestion).toHaveBeenLastCalledWith(Q1, { keepPapers: true })
+    expect(client.setQuestion.mock.calls.some(([, f]) => f.reset)).toBe(false)
   })
 })
 

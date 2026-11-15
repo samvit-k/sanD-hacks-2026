@@ -67,9 +67,9 @@ function ConflictPanel({ composer, onCancel }) {
   )
 }
 
-export default function QuestionDialog({ open, workspace, onClose, onConfirmed }) {
+export default function QuestionDialog({ open, client, workspace, onClose, onConfirmed }) {
   const current = workspace?.question ?? null
-  const composer = useQuestionComposer({ currentQuestion: current, onConfirmed })
+  const composer = useQuestionComposer({ client, currentQuestion: current, onConfirmed })
   const { mode, setMode, interest, setInterest, latest, draft, setDraft, origin, generating, error, conflict } = composer
   const interestRef = useRef(null)
   const draftRef = useRef(null)

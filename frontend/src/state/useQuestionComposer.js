@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { api, ApiError, TimeoutError } from '../api/client.js'
+import { ApiError, TimeoutError } from '../api/client.js'
 
 // Drafting the central research question. Three things are kept apart:
 //  - `interest`: the researcher's own words, never altered;
@@ -34,7 +34,8 @@ function proposeMessage(err) {
 
 const FLAGS = { keep_papers: { keepPapers: true }, reset: { reset: true } }
 
-export function useQuestionComposer({ currentQuestion = null, onConfirmed } = {}) {
+/** `client`: the session-bound API client of the session whose question is being set. */
+export function useQuestionComposer({ client, currentQuestion = null, onConfirmed } = {}) {
   const [mode, setModeState] = useState('interest') // 'interest' | 'manual'
   const [interest, setInterestState] = useState('')
   const [proposals, setProposals] = useState([]) // [{question, rationale, interest, source}]
@@ -76,7 +77,7 @@ export function useQuestionComposer({ currentQuestion = null, onConfirmed } = {}
     setError(null)
     const previous = again ? proposals.filter((p) => p.interest === text).map((p) => p.question) : []
     try {
-      const res = await api.proposeQuestion(text, previous)
+      const res = await client.proposeQuestion(text, previous)
       if (id !== reqRef.current) return false // superseded: never touches newer state
       offerProposals([{ ...res.proposal, interest: res.interest }], res.source ?? 'gemini',
         { replaceDraft: draftVersion.current === versionAtStart })
@@ -164,7 +165,7 @@ export function useQuestionComposer({ currentQuestion = null, onConfirmed } = {}
     setError(null)
     let ws
     try {
-      ws = await api.setQuestion(question, choice ? FLAGS[choice] : {})
+      ws = await client.setQuestion(question, choice ? FLAGS[choice] : {})
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.detail?.code === 'question_conflict') {
         setConflict({ ...err.detail, question })

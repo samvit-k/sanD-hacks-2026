@@ -39,12 +39,16 @@ function ServiceDots({ health }) {
 
 export default function TopBar({
   graph, workspace, checks, health, source, query, onQuery, onPick, filters, onFilters, assistantOpen, onToggleAssistant,
+  projectTitle = null,
 }) {
+  // The project's (renameable) title; the full central question stays in the tooltip and the left panel.
+  const heading = projectTitle || workspace?.question || 'No research question yet'
+  const tooltip = workspace?.question ? `Central question: ${workspace.question}` : heading
   const c = workspace?.counts ?? {}
   return (
     <header className="topbar">
       <div className="tb-title">
-        <span className="tb-name" title={workspace?.question || ''}>{workspace?.question || 'No research question yet'}</span>
+        <span className="tb-name" title={tooltip} data-testid="project-heading">{heading}</span>
         <span className="tb-meta">
           {c.papers ?? 0} papers · {c.claims ?? 0} claims · {c.relationships ?? 0} relationships
         </span>

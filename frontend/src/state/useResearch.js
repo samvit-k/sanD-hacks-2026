@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, loadFixture } from '../api/client.js'
+import { loadFixture } from '../api/client.js'
 
 // Loads everything the page shows from the live API. If the server is unreachable, it falls back to
 // saved fixtures and labels them. Fixtures are treated as fictional SAMPLE data unless the file is
@@ -27,41 +27,56 @@ export function workspaceFromGraph(graph, source) {
   }
 }
 
-export function useResearch() {
+/**
+ * Data for one research project.
+ * - `client` (sessionApi): live data only. If the server cannot be reached the hook reports an error — it NEVER
+ *   substitutes fixture/sample data for a real project (that would make the evidence appear to have changed).
+ * - `demo: true` (and no client): the fictional sample dataset, only when the user explicitly chose demo mode.
+ *   It is always labelled by its provenance (meta.source: sample | snapshot).
+ * `refresh({ fallback: false })` (used after uploads) keeps the current view and throws on failure, so the
+ * caller can say "refresh failed" and retry just the refresh.
+ */
+export function useResearch(client, { demo = false } = {}) {
   const [state, setState] = useState({
     status: 'loading', source: null, graph: null, workspace: null, impact: null, checks: null, health: null, error: null,
   })
 
-  // `fallback: false` (used after uploads) never swaps live data for fixtures: on failure it keeps the
-  // current view and throws, so the caller can say "refresh failed" and retry just the refresh.
   const refresh = useCallback(async ({ fallback = true } = {}) => {
+    if (!client) {
+      if (!demo) {
+        const error = new Error('No research project is open.')
+        setState((s) => ({ ...s, status: 'error', error }))
+        return null
+      }
+      try {
+        const graph = await loadFixture('graph_with_new.json')
+        const source = fixtureSource(graph)
+        const impact = await loadFixture('paper_d_result.json').catch(() => null)
+        setState({ status: 'ready', source, graph, workspace: workspaceFromGraph(graph, source), impact, checks: null,
+          health: null, error: null })
+      } catch (error) {
+        setState((s) => ({ ...s, status: 'error', error }))
+      }
+      return null
+    }
     try {
-      // graph + workspace are required; impact, checks and health are optional and never trigger the fallback.
+      // graph + workspace are required; impact, checks and health are optional.
       const [graph, workspace, impact, checks, health] = await Promise.all([
-        api.graph(),
-        api.workspace(),
-        api.latestImpact().catch(() => null),
-        api.checks().catch(() => null),
-        api.health().catch(() => null),
+        client.graph(),
+        client.workspace(),
+        client.latestImpact().catch(() => null),
+        client.checks().catch(() => null),
+        client.health().catch(() => null),
       ])
       setState({ status: 'ready', source: 'live', graph, workspace, impact, checks, health, error: null })
       return { graph, workspace, impact }
     } catch (error) {
       if (!fallback) throw error
-      try {
-        const graph = await loadFixture('graph_with_new.json')
-        const source = fixtureSource(graph)
-        const impact = await loadFixture('paper_d_result.json').catch(() => null)
-        setState({
-          status: 'ready', source, graph, workspace: workspaceFromGraph(graph, source), impact, checks: null, health: null, error,
-        })
-        return null
-      } catch {
-        setState((s) => ({ ...s, status: 'error', error }))
-        return null
-      }
+      // Keep whatever real data is already shown; never replace it with sample data.
+      setState((s) => ({ ...s, status: 'error', error }))
+      return null
     }
-  }, [])
+  }, [client, demo])
 
   useEffect(() => {
     refresh()

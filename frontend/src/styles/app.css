@@ -609,3 +609,51 @@ button.node-chip:hover { background: var(--hover); color: var(--text); }
   color: var(--faint); line-height: 1.4; overflow-wrap: anywhere; }
 .chat-divider span { font-weight: 600; }
 .chat-row.stale { opacity: 0.62; }
+
+/* ---------- Stage D: research projects (sessions) ---------- */
+.app-loading { display: grid; place-items: center; height: 100vh; color: var(--faint); font-size: 14px; background: var(--bg-stage); }
+.app-empty { grid-template-columns: var(--sb-w) 1fr; }
+.sess { position: relative; margin: 6px 0 2px; }
+.sess-current { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 8px; width: 100%;
+  text-align: left; padding: 9px 12px; border-radius: var(--r-md); border: 1px solid var(--hair); background: var(--bg-elev);
+  cursor: pointer; font: inherit; box-shadow: var(--shadow-sm); }
+.sess-current:hover { background: var(--hover); }
+.sess-current:disabled { cursor: not-allowed; opacity: 0.7; }
+.sess-kicker { grid-column: 1; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.sess-title { grid-column: 1; font-size: 14.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.sess-current svg { grid-column: 2; grid-row: 1 / span 2; align-self: center; width: 16px; height: 16px; fill: none;
+  stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sess-menu { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 6px); background: var(--bg-elev);
+  border: 1px solid var(--hair); border-radius: var(--r-md); box-shadow: var(--shadow-md); padding: 6px; max-height: 60vh;
+  overflow-y: auto; }
+.sess-list { list-style: none; margin: 0; padding: 0; }
+.sess-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 8px 10px; border: 0;
+  border-radius: var(--r-sm); background: transparent; cursor: pointer; font: inherit; }
+.sess-item:hover { background: var(--hover); }
+.sess-item.on { background: var(--accent-soft); }
+.sess-item-title { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.sess-item-meta { font-size: 12px; color: var(--muted); }
+.sess-actions { display: flex; flex-direction: column; border-top: 1px solid var(--hair-2); margin-top: 6px; padding-top: 6px; }
+.sess-action { text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: var(--r-sm);
+  font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.sess-action:hover { background: var(--hover); }
+.sess-action:disabled { color: var(--faint); cursor: not-allowed; background: transparent; }
+.sess-action.danger { color: #8a3a32; }
+.sess-action.danger:disabled { color: var(--faint); }
+.sess-warn { margin: 6px 2px; padding: 9px 10px; border-radius: var(--r-sm); background: #fff7e6; border: 1px solid rgba(176, 125, 58, 0.3);
+  color: #6b4a12; font-size: 12.5px; line-height: 1.45; }
+.sess-warn-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.sess-error { margin: 6px 2px; font-size: 12.5px; color: #8a3a32; }
+.sess-rename { display: flex; flex-direction: column; gap: 6px; }
+.sess-rename input { font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid rgba(14, 165, 233, 0.45);
+  border-radius: var(--r-md); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+.sess-rename-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qd-small { width: min(480px, 100%); }
+.del-ack { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; font-size: 13px; cursor: pointer; }
+.del-ack input { margin-top: 3px; }
+.conn-card h2 { margin: 6px 0 0; font-size: 17px; color: var(--text); }
+.conn-card code { font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); padding: 1px 4px; border-radius: 4px; }
+.conn-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.conn-actions .link-btn { font-size: 13px; }
+.conn-card .conn-detail { margin-top: -6px; font-size: 12px; color: var(--faint); }

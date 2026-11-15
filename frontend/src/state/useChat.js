@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, DEFAULT_SESSION } from '../api/client.js'
 
 // Conversation state for one research session.
 //
@@ -35,7 +34,9 @@ export function withNotes(messages, notes = []) {
   return rows.map((r) => r.m)
 }
 
-export function useChat(sessionId = DEFAULT_SESSION, { enabled = true } = {}) {
+/** `client`: the session-bound API client of the research session this conversation belongs to. */
+export function useChat(client, { enabled = true } = {}) {
+  const sessionId = client?.sessionId ?? null
   const [state, setState] = useState({ messages: [], loaded: false, pending: null, error: null })
   const [notes, setNotes] = useState({}) // { [sessionId]: note[] } — survives session switches
   const gen = useRef(0)
@@ -49,7 +50,7 @@ export function useChat(sessionId = DEFAULT_SESSION, { enabled = true } = {}) {
     const v = ++historyVersion.current
     const sid = sessionId
     try {
-      const res = await api.chatHistory(sid)
+      const res = await client.chatHistory()
       if (gen.current !== g || historyVersion.current !== v) return // superseded
       setState((s) => {
         const messages = mergeById(res.messages ?? [], s.messages)
@@ -80,7 +81,7 @@ export function useChat(sessionId = DEFAULT_SESSION, { enabled = true } = {}) {
     const sid = sessionId
     setState((s) => ({ ...s, pending: { text: message, context, token }, error: null }))
     try {
-      const res = await api.chat({ message, context, sessionId: sid })
+      const res = await client.chat({ message, context })
       if (gen.current !== g) return false // session changed meanwhile: never touch the new session
       setState((s) => {
         const messages = mergeById(s.messages, [res.user, res.assistant])

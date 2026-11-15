@@ -71,7 +71,7 @@ function ReanalysisCard({ pending, reanalysis, canRun }) {
 
 export default function WorkspacePanel({
   graph, workspace, selection, refs, onSelectPaper, onSelectQuestion, onEditQuestion, canEditQuestion, reanalysis,
-  collapsed, onToggle,
+  collapsed, onToggle, switcher = null,
 }) {
   const pending = workspace?.pending_papers ?? []
   return (
@@ -85,6 +85,7 @@ export default function WorkspacePanel({
       </div>
       {!collapsed && (
         <div className="sb-body">
+          {switcher}
           <div className="sb-section">Research question</div>
           <div className="question-wrap">
             <button type="button" className={`question-card ${selection?.kind === 'question' ? 'active' : ''}`}
