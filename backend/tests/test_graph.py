@@ -69,3 +69,17 @@ def test_impact_summary_hides_citations_when_insufficient():
                 "insufficient_evidence": True}]
     s = build_impact_summary(PAPERS[2], CLAIMS, impacts, SENT, PAPERS)
     assert s["impacts"][0]["cited"] == []
+
+
+def test_ref_order_numbers_papers_by_insertion_then_their_claims():
+    from app.graph import ref_order
+    papers = [{"id": "b", "created_at": "2026-01-02"}, {"id": "a", "created_at": "2026-01-01"}]
+    claims = [{"id": 3, "paper_id": "a"}, {"id": 1, "paper_id": "b"}, {"id": 2, "paper_id": "a"}]
+    assert ref_order(papers, claims) == ["paper:a", "claim:2", "claim:3", "paper:b", "claim:1"]
+
+
+def test_build_graph_attaches_refs_only_when_known():
+    g = build_graph("Q?", PAPERS, CLAIMS, RELS, SENT, refs={"paper:" + PAPERS[0]["id"]: 7})
+    data = {n["data"]["id"]: n["data"] for n in g["nodes"]}
+    assert data["paper:" + PAPERS[0]["id"]]["ref"] == 7
+    assert "ref" not in data["q"]

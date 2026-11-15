@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS discovery_cache (
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 
+-- Stable display numbers for graph nodes ("Node N"). Append-only: a number is assigned once, the
+-- first time a node appears in the graph, and is never reassigned or reused (new papers/claims get
+-- the next number). Cleared only by an explicit reset. Becomes per-session with the session backend.
+CREATE TABLE IF NOT EXISTS node_refs (
+    node_id text PRIMARY KEY,      -- graph node id, e.g. 'paper:<id>' or 'claim:<id>'
+    num     serial UNIQUE
+);
+
 -- Which papers requested which cached results (many-to-many), so a shared query never
 -- re-assigns another paper's discovery results.
 CREATE TABLE IF NOT EXISTS discovery_links (

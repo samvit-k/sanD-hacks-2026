@@ -16,7 +16,7 @@ from .compare import (apply_impact_guardrail, apply_pair_guardrail, build_impact
 from .config import settings
 from .contracts import ExtractionResult, ImpactJudgment, PairJudgment
 from .extract import build_extraction_prompt, validate_claims
-from .graph import build_graph, build_impact_summary, paper_detail
+from .graph import build_graph, build_impact_summary, paper_detail, ref_order
 from .llm import LLM, QuotaExhaustedError
 
 log = logging.getLogger(__name__)
@@ -271,8 +271,9 @@ def graph_payload(question: Optional[str] = None) -> Dict:
         sentences = _sentences_for(conn, claims, rels)
         latest = db.latest_new_paper(conn)
         disc_row = db.latest_discovery_for(conn, latest["id"]) if latest else None
+        refs = db.assign_node_refs(conn, ref_order(papers, claims))
     discovery = dict(disc_row["results"], for_paper_id=latest["id"]) if disc_row else None
-    return build_graph(question, papers, claims, rels, sentences, discovery=discovery)
+    return build_graph(question, papers, claims, rels, sentences, discovery=discovery, refs=refs)
 
 
 def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str = "live") -> Dict:

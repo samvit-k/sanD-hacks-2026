@@ -1,18 +1,19 @@
 import cytoscape from 'cytoscape'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { computeLayout } from '../graph/layout.js'
 import { buildStyle } from '../graph/style.js'
 import { buildElements } from '../graph/toElements.js'
+import { NODE_KINDS, RELATIONSHIPS } from '../graph/vocab.js'
 import ZoomControls from './ZoomControls.jsx'
 
 const DOT_SPACING = 22
-const LABEL_ZOOM = 0.6 // below this, claim labels show only on hover/selection/search (BioOKF hub-only labels)
 const LEGEND_NUDGE = { x: 110, y: -30 } // initial view shifts away from the bottom-left legend card
 
 /** Map an app selection ({kind, id}) to a Cytoscape element id. */
 export function elementIdFor(selection) {
   if (!selection) return null
   switch (selection.kind) {
+    case 'question': return 'q'
     case 'paper': return `paper:${selection.id}`
     case 'claim': return `claim:${selection.id}`
     case 'relationship': return `rel:${selection.id}`
@@ -24,10 +25,22 @@ export function elementIdFor(selection) {
 function selectionFor(ele) {
   const d = ele.data()
   if (ele.isEdge()) return d.type === 'relationship' ? { kind: 'relationship', id: d.relationship_id } : null
+  if (d.type === 'question') return { kind: 'question', id: 'q' }
   if (d.type === 'paper') return { kind: 'paper', id: d.paper_id }
   if (d.type === 'claim') return { kind: 'claim', id: d.claim_id }
   if (d.type === 'discovery') return { kind: 'discovery', id: d.index }
   return null
+}
+
+/** Short hover hint: element type + its short label (full text only appears on selection). */
+function tipText(ele) {
+  const d = ele.data()
+  if (ele.isEdge()) {
+    const rel = RELATIONSHIPS[d.label]
+    return `${d.insufficient_evidence ? 'Insufficient evidence' : rel?.label ?? 'Relationship'} · click for evidence`
+  }
+  const kind = NODE_KINDS[d.kind]?.label ?? 'Node'
+  return d.kind === 'question' ? `${kind} · click to read it` : `${kind} · ${d.displayLabel}`
 }
 
 export default function GraphCanvas({ graph, hidden, matches, selection, highlight, onSelect }) {
@@ -36,18 +49,8 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
   const posRef = useRef({})
   const onSelectRef = useRef(onSelect)
   const [zoom, setZoom] = useState(1)
+  const [tip, setTip] = useState(null)
   onSelectRef.current = onSelect
-
-  const updateLabels = useCallback(() => {
-    const cy = cyRef.current
-    if (!cy) return
-    const z = cy.zoom()
-    cy.batch(() => {
-      cy.nodes('.claim-node').forEach((n) => {
-        n.toggleClass('labelled', z >= LABEL_ZOOM || n.hasClass('hover') || n.selected() || n.hasClass('match') || n.hasClass('nbr'))
-      })
-    })
-  }, [])
 
   // Create the Cytoscape instance once.
   useEffect(() => {
@@ -73,7 +76,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
           el.style.backgroundPosition = `${x}px ${y}px`
         }
         setZoom(z)
-        updateLabels()
+        setTip(null)
       })
     }
     cy.on('viewport', onViewport)
@@ -83,18 +86,23 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
     cy.on('tap', (evt) => {
       if (evt.target === cy) onSelectRef.current(null)
     })
-    cy.on('tap', 'node, edge.evidence', (evt) => {
+    cy.on('tap', 'node, edge.evidence, edge.evidence-hit', (evt) => {
+      setTip(null)
       onSelectRef.current(selectionFor(evt.target))
     })
-    cy.on('mouseover', 'node, edge.evidence', (evt) => {
-      evt.target.addClass('hover')
+    // Hit edges stand in for their visible twin (hover styling + hint).
+    const visual = (ele) => (ele.data('hitFor') ? cy.getElementById(ele.data('hitFor')) : ele)
+    cy.on('mouseover', 'node, edge.evidence, edge.evidence-hit', (evt) => {
+      const ele = visual(evt.target)
+      ele.addClass('hover')
       if (containerRef.current) containerRef.current.style.cursor = 'pointer'
-      updateLabels()
+      const p = evt.renderedPosition ?? ele.renderedPosition?.()
+      if (p) setTip({ x: p.x, y: p.y, text: tipText(ele) })
     })
-    cy.on('mouseout', 'node, edge.evidence', (evt) => {
-      evt.target.removeClass('hover')
+    cy.on('mouseout', 'node, edge.evidence, edge.evidence-hit', (evt) => {
+      visual(evt.target).removeClass('hover')
       if (containerRef.current) containerRef.current.style.cursor = 'default'
-      updateLabels()
+      setTip(null)
     })
     return () => {
       cancelAnimationFrame(frame)
@@ -102,7 +110,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
       cy.destroy()
       cyRef.current = null
     }
-  }, [updateLabels])
+  }, [])
 
   // Rebuild elements when the graph changes; existing nodes glide to their new positions.
   useEffect(() => {
@@ -135,14 +143,13 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
         if (p) n.animate({ position: p }, { duration: 450, easing: 'ease-out-cubic' })
       })
     }
-    updateLabels()
-  }, [graph, updateLabels])
+  }, [graph])
 
   // Filters.
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
-    cy.batch(() => cy.elements().forEach((e) => e.toggleClass('hidden', hidden?.has(e.id()) ?? false)))
+    cy.batch(() => cy.elements().forEach((e) => e.toggleClass('hidden', hidden?.has(e.data('hitFor') ?? e.id()) ?? false)))
   }, [graph, hidden])
 
   // Selection, search matches, neighbourhood focus and impact highlights.
@@ -174,10 +181,22 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
       }
     })
     if (sel && sel.nonempty() && selection?.focus) {
-      cy.animate({ center: { eles: sel }, zoom: Math.max(cy.zoom(), 1.05) }, { duration: 380, easing: 'ease-in-out-cubic' })
+      // Centre the selection in the canvas area NOT covered by the floating inspector card.
+      const card = containerRef.current?.closest('.stage')?.querySelector('.inspector')
+      const cardW = card ? card.offsetWidth + 16 : 0
+      const sideBySide = cardW && cy.width() - cardW > 320 // narrow screens use a bottom sheet instead
+      const visibleW = sideBySide ? cy.width() - cardW : cy.width()
+      const visibleH = !sideBySide && card ? cy.height() - card.offsetHeight - 8 : cy.height()
+      const bb = sel.boundingBox()
+      // Zoom in to at least 1.05, but never so far that the selection (e.g. a long edge) leaves the view.
+      const fitZoom = Math.min((visibleW - 80) / Math.max(bb.w, 1), (visibleH - 80) / Math.max(bb.h, 1))
+      const zoom = Math.max(0.3, Math.min(Math.max(cy.zoom(), 1.05), fitZoom))
+      const cx = (bb.x1 + bb.x2) / 2
+      const cyy = (bb.y1 + bb.y2) / 2
+      cy.animate({ zoom, pan: { x: visibleW / 2 - cx * zoom, y: visibleH / 2 - cyy * zoom } },
+        { duration: 380, easing: 'ease-in-out-cubic' })
     }
-    updateLabels()
-  }, [graph, selection, matches, highlight, updateLabels])
+  }, [graph, selection, matches, highlight])
 
   const zoomBy = (factor) => {
     const cy = cyRef.current
@@ -199,6 +218,7 @@ export default function GraphCanvas({ graph, hidden, matches, selection, highlig
   return (
     <div className="canvas-wrap">
       <div ref={containerRef} className="canvas" data-testid="graph-canvas" />
+      {tip && <div className="graph-tip" style={{ left: tip.x + 12, top: tip.y + 12 }} role="tooltip">{tip.text}</div>}
       <ZoomControls zoom={zoom} onZoomIn={() => zoomBy(1.25)} onZoomOut={() => zoomBy(0.8)} onFit={fit} onRelayout={relayout} />
     </div>
   )

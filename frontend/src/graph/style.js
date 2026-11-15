@@ -67,21 +67,19 @@ export function buildStyle() {
     },
     {
       selector: 'node.claim-node',
-      style: { 'font-size': 12, color: '#3b3f47', 'text-opacity': 0, 'text-max-width': 230 },
+      style: { 'font-size': 12, color: '#3b3f47', 'text-max-width': 120 },
     },
     // Labels sit on the outward side of the ring so they never run into the centre.
     { selector: 'node[side = "left"]', style: { 'text-halign': 'left', 'text-margin-x': -7 } },
-    // Paper titles are centred above their node (max two lines) so they stay clear of the claim fan.
+    // Paper labels ("Node N") are centred above their node so they stay clear of the claim fan.
     {
       selector: 'node.paper-node',
       style: {
         'text-valign': 'top',
         'text-halign': 'center',
         'text-margin-x': 0,
-        'text-margin-y': -7,
-        'text-wrap': 'wrap',
-        'text-max-width': 200,
-        'line-height': 1.2,
+        'text-margin-y': -6,
+        'text-max-width': 140,
         'text-background-color': '#fafaf9',
         'text-background-opacity': 0.85,
         'text-background-padding': 2,
@@ -89,7 +87,6 @@ export function buildStyle() {
     },
     { selector: 'node.claim', style: { 'background-color': NODE_KINDS.claim.color } },
     { selector: 'node.claim_new', style: { 'background-color': NODE_KINDS.claim_new.color } },
-    { selector: 'node.claim-node.labelled', style: { 'text-opacity': 1 } },
     {
       selector: 'node.discovery',
       style: {
@@ -125,6 +122,8 @@ export function buildStyle() {
     { selector: 'edge.discovered', style: { 'line-opacity': 0.2, 'line-style': 'dashed', 'line-dash-pattern': [1.5, 3.5], width: 0.7 } },
     // Evidence edges: coloured, thicker, drawn above structure.
     { selector: 'edge.evidence', style: { 'z-index': 5, 'line-opacity': 0.85 } },
+    // Transparent wide twins of evidence edges: larger click/hover target, never drawn.
+    { selector: 'edge.evidence-hit', style: { width: 14, 'line-opacity': 0, 'z-index': 4, 'transition-duration': 0 } },
   ]
   for (const [key, r] of Object.entries(RELATIONSHIPS)) {
     style.push({
@@ -148,7 +147,6 @@ export function buildStyle() {
   }
   style.push(
     { selector: '.faded', style: { opacity: 0.18, 'text-opacity': 0.18 } },
-    { selector: 'node.claim-node.faded', style: { 'text-opacity': 0 } },
     { selector: '.hidden', style: { display: 'none' } },
   )
   return style

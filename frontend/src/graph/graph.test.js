@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { computeLayout } from './layout.js'
 import {
-  DEFAULT_FILTERS, buildElements, hiddenIds, matchingIds, relationshipCounts, searchNodes,
+  DEFAULT_FILTERS, buildElements, hiddenIds, matchingIds, nodeIdForRef, nodeRefs, relationshipCounts, searchNodes,
 } from './toElements.js'
 import { BANNED_WORDS, IMPACTS, INSUFFICIENT, NODE_KINDS, RELATIONSHIPS, STRUCTURAL } from './vocab.js'
 
@@ -25,7 +25,12 @@ describe('buildElements', () => {
 
   it('keeps structural edges visually separate from evidence edges', () => {
     for (const e of edges) {
-      if (e.data.type === 'relationship') {
+      if (e.data.hitFor) {
+        // Invisible click target for an evidence edge: same endpoints, never styled as evidence.
+        expect(e.classes).toBe('evidence-hit')
+        const twin = edges.find((x) => x.data.id === e.data.hitFor)
+        expect([twin.data.source, twin.data.target]).toEqual([e.data.source, e.data.target])
+      } else if (e.data.type === 'relationship') {
         expect(e.classes).toMatch(/^evidence rel-/)
         expect(RELATIONSHIPS[e.data.label]).toBeDefined()
       } else {
@@ -35,6 +40,16 @@ describe('buildElements', () => {
       }
     }
     expect(edges.find((e) => e.data.id === 'rel:5').classes).toContain('insufficient')
+  })
+
+  it('labels nodes compactly: Central Question, Node N, Lead N', () => {
+    const label = (id) => nodes.find((n) => n.data.id === id).data.displayLabel
+    expect(label('q')).toBe('Central Question')
+    for (const n of nodes) {
+      if (n.data.type === 'claim') expect(n.data.displayLabel).toMatch(/^Node \d+$/)
+      if (n.data.type === 'paper') expect(n.data.displayLabel).toMatch(/^Node \d+( · new)?$/)
+      if (n.data.type === 'discovery') expect(n.data.displayLabel).toMatch(/^Lead \d+$/)
+    }
   })
 
   it('grows papers with their claim count', () => {
@@ -138,5 +153,50 @@ describe('vocabulary', () => {
     for (const s of strings) {
       for (const w of BANNED_WORDS) expect(s.toLowerCase().split(/\W+/)).not.toContain(w)
     }
+  })
+})
+
+describe('stable node numbers', () => {
+  const withRefs = (g, refs) => ({ ...g, nodes: g.nodes.map(({ data }) => ({ data: { ...data, ref: refs[data.id] } })) })
+  const live = withRefs(fixture('graph.json'), {})
+  const liveRefs = nodeRefs(live)
+
+  it('numbers every paper and claim uniquely, but not the question or leads', () => {
+    const numbered = graph.nodes.filter((n) => ['paper', 'claim'].includes(n.data.type))
+    const refs = nodeRefs(graph)
+    expect(Object.keys(refs)).toHaveLength(numbered.length)
+    expect(new Set(Object.values(refs)).size).toBe(numbered.length)
+    expect(refs.q).toBeUndefined()
+  })
+
+  it('uses server refs verbatim and never renumbers when new nodes appear', () => {
+    const server = {}
+    let n = 0
+    for (const { data } of fixture('graph.json').nodes) if (['paper', 'claim'].includes(data.type)) server[data.id] = ++n
+    const before = nodeRefs(withRefs(fixture('graph.json'), server))
+    expect(before).toEqual(server)
+    // New paper D + claims inserted at the FRONT of the payload: earlier numbers still don't move.
+    const bigger = withRefs(graph, server)
+    bigger.nodes = [...bigger.nodes].reverse()
+    const after = nodeRefs(bigger)
+    for (const [id, num] of Object.entries(before)) expect(after[id]).toBe(num)
+    const added = Object.keys(after).filter((id) => !(id in before)).map((id) => after[id])
+    expect(Math.min(...added)).toBeGreaterThan(n)
+  })
+
+  it('resolves Node N back to the canonical id', () => {
+    const [id, num] = Object.entries(liveRefs)[2]
+    expect(nodeIdForRef(liveRefs, num)).toBe(id)
+    expect(nodeIdForRef(liveRefs, 999)).toBeNull()
+  })
+
+  it('search still matches full text, and also "Node N"', () => {
+    const anyClaim = Object.values(graph.claims)[0]
+    const word = anyClaim.text.split(' ').slice(1, 3).join(' ')
+    expect(searchNodes(graph, word).some((h) => h.id === `claim:${anyClaim.id}`)).toBe(true)
+    const refs = nodeRefs(graph)
+    const [id, num] = Object.entries(refs)[1]
+    expect(searchNodes(graph, `node ${num}`)[0].id).toBe(id)
+    expect([...matchingIds(graph, `Node ${num}`)]).toEqual([id])
   })
 })

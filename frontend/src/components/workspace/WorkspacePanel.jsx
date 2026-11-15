@@ -2,7 +2,7 @@ import { claimCounts } from '../../graph/toElements.js'
 
 // Left research workspace (BioOKF sidebar language). Shell for the visual checkpoint:
 // research question + uploaded papers. Upload and evaluation controls are added in the next stage.
-function PaperList({ graph, selection, onSelectPaper }) {
+function PaperList({ graph, selection, refs, onSelectPaper }) {
   const papers = Object.values(graph?.papers ?? {})
   const counts = claimCounts(graph)
   if (!papers.length) return <p className="empty-note">No papers yet.</p>
@@ -18,7 +18,8 @@ function PaperList({ graph, selection, onSelectPaper }) {
               <span className="paper-title">
                 <span className={`node-dot ${p.access_level === 'abstract' ? 'dashed' : ''}`}
                   style={{ background: p.access_level === 'abstract' ? '#8A86C4' : '#6366A8', boxShadow: p.is_new ? '0 0 0 2px #0ea5e9' : undefined }} />
-                {p.title}
+                <span className="paper-title-text">{p.title}</span>
+                {refs?.[`paper:${p.id}`] != null && <span className="node-chip paper">Node {refs[`paper:${p.id}`]}</span>}
               </span>
               <span className="paper-meta">
                 {n} {n === 1 ? 'claim' : 'claims'} · {p.access_level === 'abstract' ? 'abstract only' : 'full text'}
@@ -38,7 +39,7 @@ function PaperList({ graph, selection, onSelectPaper }) {
   )
 }
 
-export default function WorkspacePanel({ graph, workspace, selection, onSelectPaper, collapsed, onToggle }) {
+export default function WorkspacePanel({ graph, workspace, selection, refs, onSelectPaper, onSelectQuestion, collapsed, onToggle }) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Research workspace">
       <div className="sb-head">
@@ -51,16 +52,18 @@ export default function WorkspacePanel({ graph, workspace, selection, onSelectPa
       {!collapsed && (
         <div className="sb-body">
           <div className="sb-section">Research question</div>
-          <div className="question-card">
+          <button type="button" className={`question-card ${selection?.kind === 'question' ? 'active' : ''}`}
+            onClick={onSelectQuestion} title="Show the Central Question in the graph">
+            <div className="q-kicker">Central Question</div>
             <div className="q-text">{workspace?.question || 'No research question set'}</div>
             <div className="q-meta">
               {workspace?.counts?.library_papers ?? 0} library papers · {workspace?.counts?.claims ?? 0} claims
             </div>
             {workspace?.source === 'default' && <div className="q-hint">Demo default from .env</div>}
-          </div>
+          </button>
 
           <div className="sb-section">Papers</div>
-          <PaperList graph={graph} selection={selection} onSelectPaper={onSelectPaper} />
+          <PaperList graph={graph} selection={selection} refs={refs} onSelectPaper={onSelectPaper} />
         </div>
       )}
     </aside>

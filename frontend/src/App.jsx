@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import GraphCanvas from './components/GraphCanvas.jsx'
 import Legend from './components/Legend.jsx'
 import TopBar from './components/TopBar.jsx'
+import Inspector from './components/inspector/Inspector.jsx'
 import WorkspacePanel from './components/workspace/WorkspacePanel.jsx'
-import { DEFAULT_FILTERS, hiddenIds, matchingIds } from './graph/toElements.js'
+import { DEFAULT_FILTERS, hiddenIds, matchingIds, nodeRefs } from './graph/toElements.js'
 import { useResearch } from './state/useResearch.js'
 
 const NARROW_QUERY = '(max-width: 1100px)'
@@ -55,6 +56,7 @@ export default function App() {
   const collapsed = manualCollapsed ?? narrow
   useEffect(() => setManualCollapsed(null), [narrow]) // crossing the breakpoint re-applies the default
 
+  const refs = useMemo(() => nodeRefs(graph), [graph])
   const hidden = useMemo(() => hiddenIds(graph, filters), [graph, filters])
   const matches = useMemo(() => matchingIds(graph, query), [graph, query])
   const highlight = useMemo(() => {
@@ -71,13 +73,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const pickSearch = (hit) => {
-    const node = graph.nodes.find((n) => n.data.id === hit.id)?.data
+  // Select + centre an item. Also the hook future chat references ("Node 7", an edge) will call.
+  const navigate = (sel) => setSelection(sel ? { ...sel, focus: true } : null)
+  const focusNode = (nodeId) => {
+    const node = graph?.nodes.find((n) => n.data.id === nodeId)?.data
     if (!node) return
-    if (node.type === 'paper') setSelection({ kind: 'paper', id: node.paper_id, focus: true })
-    else if (node.type === 'claim') setSelection({ kind: 'claim', id: node.claim_id, focus: true })
-    else if (node.type === 'discovery') setSelection({ kind: 'discovery', id: node.index, focus: true })
+    if (node.type === 'question') navigate({ kind: 'question', id: 'q' })
+    else if (node.type === 'paper') navigate({ kind: 'paper', id: node.paper_id })
+    else if (node.type === 'claim') navigate({ kind: 'claim', id: node.claim_id })
+    else if (node.type === 'discovery') navigate({ kind: 'discovery', id: node.index })
   }
+  const pickSearch = (hit) => focusNode(hit.id)
 
   return (
     <div className={`app ${collapsed ? 'sb-collapsed' : ''}`}>
@@ -85,7 +91,9 @@ export default function App() {
         graph={graph}
         workspace={workspace}
         selection={selection}
-        onSelectPaper={(id) => setSelection({ kind: 'paper', id, focus: true })}
+        refs={refs}
+        onSelectPaper={(id) => navigate({ kind: 'paper', id })}
+        onSelectQuestion={() => navigate({ kind: 'question', id: 'q' })}
         collapsed={collapsed}
         onToggle={() => setManualCollapsed(!collapsed)}
       />
@@ -104,6 +112,12 @@ export default function App() {
             />
           )}
           {graph && <Legend />}
+          {graph && (
+            <Inspector
+              graph={graph} workspace={workspace} selection={selection} refs={refs}
+              onNavigate={navigate} onClose={() => setSelection(null)}
+            />
+          )}
         </section>
       </main>
     </div>

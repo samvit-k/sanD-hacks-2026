@@ -46,8 +46,25 @@ def relationship_detail(r: Dict, claims: Dict[int, Dict], papers: Dict, sentence
                       "b": [q for q in cited if q["paper_id"] == b["paper_id"]]}}
 
 
+def ref_order(papers: List[Dict], claims: List[Dict]) -> List[str]:
+    """Order in which not-yet-numbered nodes receive display numbers: papers by insertion time,
+    each followed by its claims (by id). Only nodes without a number are affected, so this order
+    never changes numbers that were already assigned."""
+    by_paper: Dict[str, List[Dict]] = {}
+    for c in sorted(claims, key=lambda c: c["id"]):
+        by_paper.setdefault(c["paper_id"], []).append(c)
+    out: List[str] = []
+    for p in sorted(papers, key=lambda p: (str(p.get("created_at") or ""), p["id"])):
+        out.append(f"paper:{p['id']}")
+        out.extend(f"claim:{c['id']}" for c in by_paper.get(p["id"], []))
+    return out
+
+
 def build_graph(question: str, papers: List[Dict], claims: List[Dict], relationships: List[Dict],
-                sentences: Dict[str, Dict], discovery: Optional[Dict] = None, source: str = "live") -> Dict:
+                sentences: Dict[str, Dict], discovery: Optional[Dict] = None, source: str = "live",
+                refs: Optional[Dict[str, int]] = None) -> Dict:
+    """`refs` maps node ids to stable display numbers ("Node N"); nodes without one get no `ref`."""
+    refs = refs or {}
     pmap = {p["id"]: paper_detail(p) for p in papers}
     cmap = {c["id"]: c for c in claims}
     nodes = [{"data": {"id": "q", "type": "question", "label": question or "No research question set"}}]
@@ -55,14 +72,15 @@ def build_graph(question: str, papers: List[Dict], claims: List[Dict], relations
     for p in pmap.values():
         nodes.append({"data": {"id": f"paper:{p['id']}", "type": "paper", "label": _short(p["title"], 60),
                                "paper_id": p["id"], "access_level": p["access_level"], "is_new": p["is_new"],
-                               "relevance": p["relevance"]}})
+                               "relevance": p["relevance"], "ref": refs.get(f"paper:{p['id']}")}})
         # Navigation edge for the radial layout — not a scientific relationship.
         edges.append({"data": {"id": f"about:{p['id']}", "source": "q", "target": f"paper:{p['id']}",
                                "type": "question_paper", "relevance": p["relevance"]}})
     for c in claims:
         nodes.append({"data": {"id": f"claim:{c['id']}", "type": "claim", "label": _short(c["text"]),
                                "claim_id": c["id"], "paper_id": c["paper_id"], "paper_node": f"paper:{c['paper_id']}",
-                               "is_new": bool(pmap.get(c["paper_id"], {}).get("is_new"))}})
+                               "is_new": bool(pmap.get(c["paper_id"], {}).get("is_new")),
+                               "ref": refs.get(f"claim:{c['id']}")}})
         edges.append({"data": {"id": f"has:{c['id']}", "source": f"paper:{c['paper_id']}",
                                "target": f"claim:{c['id']}", "type": "has_claim"}})
     rels = [r for r in relationships if r["claim_a"] in cmap and r["claim_b"] in cmap]

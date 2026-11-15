@@ -49,8 +49,26 @@ def delete_all(conn) -> None:
     """Delete all analysis (papers and everything derived from them). Keeps the workspace question
     and the discovery cache (keyed by search query, independent of the question).
     TRUNCATE is transactional in PostgreSQL: it is undone if the surrounding transaction rolls back."""
-    conn.execute("TRUNCATE papers, sentences, claims, relationships, impacts, discovery_links "
+    conn.execute("TRUNCATE papers, sentences, claims, relationships, impacts, discovery_links, node_refs "
                  "RESTART IDENTITY CASCADE")
+
+
+# ---------- stable node display numbers ----------
+def assign_node_refs(conn, ordered_node_ids: List[str]) -> Dict[str, int]:
+    """Give each not-yet-numbered node the next number, in the given order; return the full mapping.
+    Existing numbers are never changed, so adding papers/claims never renumbers earlier nodes."""
+    existing = {r["node_id"]: r["num"] for r in conn.execute("SELECT node_id, num FROM node_refs")}
+    for node_id in ordered_node_ids:
+        if node_id not in existing:
+            row = conn.execute("INSERT INTO node_refs (node_id) VALUES (%s) ON CONFLICT (node_id) DO NOTHING "
+                               "RETURNING num", (node_id,)).fetchone()
+            if row:
+                existing[node_id] = row["num"]
+    missing = [n for n in ordered_node_ids if n not in existing]  # inserted concurrently by another request
+    if missing:
+        for r in conn.execute("SELECT node_id, num FROM node_refs WHERE node_id = ANY(%s)", (missing,)):
+            existing[r["node_id"]] = r["num"]
+    return existing
 
 
 # ---------- workspace (single active research question) ----------

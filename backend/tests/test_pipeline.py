@@ -121,3 +121,34 @@ def test_blank_pdf_rejected_before_anything_is_stored(setup):
         pipeline.process_new_paper(FakeLLM(), blank.tobytes(), title="Scanned")
     with db.connect() as conn:
         assert db.all_papers(conn) == []
+
+
+def _refs(graph):
+    return {n["data"]["id"]: n["data"]["ref"] for n in graph["nodes"] if n["data"]["type"] in ("paper", "claim")}
+
+
+def test_node_numbers_are_stable_and_append_only(setup):
+    llm = FakeLLM()
+    seed(llm)
+    first = _refs(pipeline.graph_payload())
+    assert sorted(first.values()) == list(range(1, len(first) + 1))  # 1..N, no gaps
+    assert first["paper:paper-a"] == 1 and first[f"claim:{min(int(k[6:]) for k in first if k.startswith('claim:'))}"] == 2
+    assert _refs(pipeline.graph_payload()) == first  # a refresh never renumbers
+
+    # A later claim on an EARLIER paper gets the next number; nothing else moves.
+    with db.connect() as conn:
+        sid = conn.execute("SELECT id FROM sentences WHERE paper_id = 'paper-a' LIMIT 1").fetchone()["id"]
+        new_claim = conn.execute("INSERT INTO claims (paper_id, text, sentence_ids) VALUES ('paper-a', %s, %s) "
+                                 "RETURNING id", ("Another finding.", [sid])).fetchone()["id"]
+    pipeline.add_paper(paper_id="paper-d", title=PAPER_D[0], pdf_bytes=pdf(PAPER_D[1]), is_new=True)
+    pipeline.extract_claims(llm, "paper-d")
+    after = _refs(pipeline.graph_payload())
+    assert {k: after[k] for k in first} == first
+    assert after[f"claim:{new_claim}"] == len(first) + 1
+    assert after["paper:paper-d"] == len(first) + 2
+    assert len(set(after.values())) == len(after)
+
+    # Only an explicit reset clears the numbering.
+    with db.connect() as conn:
+        db.delete_all(conn)
+    assert _refs(pipeline.graph_payload()) == {}
