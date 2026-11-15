@@ -18,11 +18,11 @@ export function resolveSelection(graph, selection) {
   return null
 }
 
-export default function Inspector({ graph, workspace, selection, refs, onNavigate, onClose }) {
+export default function Inspector({ graph, workspace, selection, refs, onNavigate, onClose, onAsk }) {
   const resolved = resolveSelection(graph, selection)
   if (!resolved) return null
   const { kind, item } = resolved
-  const props = { graph, refs, onNavigate }
+  const props = { graph, refs, onNavigate, onAsk }
   return (
     <aside className={`inspector ${kind === 'relationship' ? 'wide' : ''}`} aria-label="Details" data-testid="inspector">
       <button type="button" className="icon-btn insp-close" onClick={onClose} aria-label="Close details">
@@ -32,7 +32,7 @@ export default function Inspector({ graph, workspace, selection, refs, onNavigat
         {kind === 'relationship' && <RelationshipView rel={item} {...props} />}
         {kind === 'claim' && <ClaimView claim={item} {...props} />}
         {kind === 'paper' && <PaperView paper={item} {...props} />}
-        {kind === 'question' && <QuestionView graph={graph} workspace={workspace} />}
+        {kind === 'question' && <QuestionView graph={graph} workspace={workspace} onAsk={onAsk} />}
         {kind === 'discovery' && <DiscoveryView lead={item} discovery={graph.discovery} />}
       </div>
     </aside>

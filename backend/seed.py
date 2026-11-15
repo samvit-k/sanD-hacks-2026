@@ -104,7 +104,8 @@ def seed(llm: LLM, manifest_path: Path = MANIFEST, reset: bool = False, refresh:
 
 def evaluate_new(llm: LLM, path: str, title: Optional[str], out=print) -> dict:
     """Evaluate a new paper; returns integrity violations ({} when clean)."""
-    summary = pipeline.process_new_paper(llm, Path(path).read_bytes(), title=title)
+    # An explicit operator command: re-running it intentionally recomputes this paper's analysis.
+    summary = pipeline.process_new_paper(llm, Path(path).read_bytes(), title=title, replace=True)
     out(json.dumps({"paper": summary["paper"]["id"], "counts": summary["counts"],
                     "timings_s": summary["timings_s"], "extraction": summary["extraction"]}, indent=1))
     for i in summary["impacts"]:

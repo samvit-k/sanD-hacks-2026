@@ -1,6 +1,8 @@
 // Thin client for the ResearchLens API (contract: backend/API.md). No retries, no fabricated data.
 
 export const UPLOAD_TIMEOUT_MS = 180000
+export const CHAT_TIMEOUT_MS = 120000
+export const DEFAULT_SESSION = 'default'
 
 export class ApiError extends Error {
   constructor(status, detail) {
@@ -75,7 +77,14 @@ export const api = {
     if (title) form.append('title', title)
     return request('/api/papers', { method: 'POST', form, timeoutMs: UPLOAD_TIMEOUT_MS })
   },
+  // Is THIS exact PDF (full SHA-256) stored, and is its analysis complete? Used after a timeout.
+  lookupPaper: (sha256) => request(`/api/papers/lookup?sha256=${encodeURIComponent(sha256)}`),
   discover: (body = {}) => request('/api/discover', { method: 'POST', json: body, timeoutMs: 120000 }),
+  // Research assistant. Every call names its session so Stage D sessions need no client changes.
+  chatHistory: (sessionId = DEFAULT_SESSION) =>
+    request(`/api/chat/messages?session_id=${encodeURIComponent(sessionId)}`),
+  chat: ({ message, context = null, sessionId = DEFAULT_SESSION }) =>
+    request('/api/chat', { method: 'POST', json: { message, context, session_id: sessionId }, timeoutMs: CHAT_TIMEOUT_MS }),
 }
 
 // Saved demo data in /public/fixtures. Fictional samples carry meta.source === "sample".

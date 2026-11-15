@@ -104,3 +104,13 @@ export function ConditionsList({ conditions }) {
 export function AccessBadge({ level }) {
   return level === 'abstract' ? <span className="badge">Abstract only</span> : null
 }
+
+/** Opens the research assistant with this graph item attached. Disabled (never fake) without a chat backend. */
+export function AskButton({ label, onAsk, context }) {
+  return (
+    <button type="button" className="btn btn-sm" disabled={!onAsk} onClick={() => onAsk?.(context)}
+      title={onAsk ? 'Open the research assistant with this item attached' : 'The research assistant is not available here.'}>
+      {label}
+    </button>
+  )
+}

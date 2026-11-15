@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS papers (
     relevance    real,          -- navigation aid only (max claim/question similarity), never a truth score
     created_at   timestamptz NOT NULL DEFAULT now()
 );
+-- Upload identity and progress: the full PDF content hash identifies "this exact file" (duplicate
+-- protection and timeout recovery); analysis_status is 'processing' while an upload is being analyzed.
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS content_sha256 text;
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS analysis_status text NOT NULL DEFAULT 'complete'
+    CHECK (analysis_status IN ('processing', 'complete'));
+CREATE INDEX IF NOT EXISTS papers_content_sha256 ON papers (content_sha256);
 
 -- Sentence IDs are globally unique: '{paper_id}:p{page}_s{n}'.
 -- Citation validation always uses the stored paper_id column, never the ID prefix.
@@ -98,6 +104,22 @@ CREATE TABLE IF NOT EXISTS node_refs (
     node_id text PRIMARY KEY,      -- graph node id, e.g. 'paper:<id>' or 'claim:<id>'
     num     serial UNIQUE
 );
+
+-- Research-assistant conversation. `session_id` scopes every read and write so separate research
+-- sessions (Stage D) can share this table or move into per-session schemas without code changes.
+-- Only verified sentence IDs are stored in `cited_sentence_ids`; quotes are rebuilt from `sentences`.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id                    serial PRIMARY KEY,
+    session_id            text NOT NULL DEFAULT 'default' CHECK (session_id ~ '^[a-z0-9][a-z0-9-]{0,39}$'),
+    role                  text NOT NULL CHECK (role IN ('user', 'assistant')),
+    content               text NOT NULL,
+    context               jsonb,                 -- graph item the question was about, e.g. {"kind":"relationship","id":5}
+    cited_sentence_ids    text[] NOT NULL DEFAULT '{}',
+    insufficient_evidence boolean NOT NULL DEFAULT false,
+    guardrail             text,                  -- why an answer was withheld, if it was
+    created_at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_messages_session ON chat_messages (session_id, id);
 
 -- Which papers requested which cached results (many-to-many), so a shared query never
 -- re-assigns another paper's discovery results.

@@ -1,10 +1,10 @@
 // Inspector views for nodes: claim, paper, central question, discovery lead.
 import { shorten } from '../../graph/toElements.js'
-import { AccessBadge, ConditionsList, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
+import { AccessBadge, AskButton, ConditionsList, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
 
 const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : '—')
 
-export function ClaimView({ claim, graph, refs, onNavigate }) {
+export function ClaimView({ claim, graph, refs, onNavigate, onAsk }) {
   const n = refs[`claim:${claim.id}`]
   const rels = Object.values(graph.relationships ?? {}).filter(
     (r) => r.claim_a.id === claim.id || r.claim_b.id === claim.id,
@@ -25,6 +25,7 @@ export function ClaimView({ claim, graph, refs, onNavigate }) {
       <Section title="Study conditions" note="model-extracted">
         <ConditionsList conditions={claim.conditions} />
       </Section>
+      <div className="insp-ask"><AskButton label="Ask about this claim" onAsk={onAsk} context={{ kind: 'claim', id: claim.id }} /></div>
       <Section title={`Evidence relationships (${rels.length})`}>
         {rels.length === 0 ? <p className="insp-empty">Not matched with claims from other papers.</p> : (
           <ul className="insp-list">
@@ -46,7 +47,7 @@ export function ClaimView({ claim, graph, refs, onNavigate }) {
   )
 }
 
-export function PaperView({ paper, graph, refs, onNavigate }) {
+export function PaperView({ paper, graph, refs, onNavigate, onAsk }) {
   const n = refs[`paper:${paper.id}`]
   const claims = Object.values(graph.claims ?? {}).filter((c) => c.paper_id === paper.id)
   const link = paper.doi ? `https://doi.org/${paper.doi}` : paper.url
@@ -68,6 +69,7 @@ export function PaperView({ paper, graph, refs, onNavigate }) {
           <dd>{fmt(paper.relevance)} <span className="insp-small">— navigation aid, not a truth score</span></dd>
         </div>
       </dl>
+      <div className="insp-ask"><AskButton label="Ask about this paper" onAsk={onAsk} context={{ kind: 'paper', id: paper.id }} /></div>
       <Section title={`Extracted claims (${claims.length})`}>
         {claims.length === 0 ? <p className="insp-empty">No claims extracted.</p> : (
           <ul className="insp-list">
@@ -86,7 +88,7 @@ export function PaperView({ paper, graph, refs, onNavigate }) {
   )
 }
 
-export function QuestionView({ graph, workspace }) {
+export function QuestionView({ graph, workspace, onAsk }) {
   const papers = Object.keys(graph.papers ?? {}).length
   const claims = Object.keys(graph.claims ?? {}).length
   return (
@@ -97,6 +99,7 @@ export function QuestionView({ graph, workspace }) {
         This question grounds claim extraction, comparison and impact analysis for {papers} papers and {claims} claims.
         {workspace?.source === 'default' ? ' It is the demo default from the server configuration.' : ''}
       </p>
+      <div className="insp-ask"><AskButton label="Ask about the central question" onAsk={onAsk} context={{ kind: 'question', id: 'q' }} /></div>
     </>
   )
 }

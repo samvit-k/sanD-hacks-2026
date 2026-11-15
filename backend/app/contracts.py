@@ -52,3 +52,10 @@ class ImpactJudgment(BaseModel):
     impact: Impact
     rationale: str = Field(description="2-3 sentences grounded in the cited sentences")
     cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
+
+
+class ChatAnswer(BaseModel):
+    answer: str = Field(description="Answer grounded ONLY in the provided evidence. Refer to graph items with "
+                                    "tokens exactly as given, e.g. [[claim:12]], [[paper:abc-123456]], [[rel:5]], [[q]]")
+    cited_sentence_ids: List[str] = Field(description="Full IDs of the provided source sentences the answer relies on")
+    insufficient_evidence: bool = Field(description="True if the provided evidence cannot answer the question")

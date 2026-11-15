@@ -4,6 +4,7 @@ Database work happens in short transactions; Gemini calls run in a small thread 
 """
 import hashlib
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -32,6 +33,15 @@ class NoQuestionError(RuntimeError):
 
 class NoLibraryError(RuntimeError):
     """Evaluation requested before any library paper with claims exists."""
+
+
+class DuplicatePaperError(RuntimeError):
+    """The same PDF (same content hash) is already stored; re-uploading would replace its analysis."""
+
+    def __init__(self, paper: Dict):
+        super().__init__(f'This PDF is already in the evidence graph as "{paper["title"]}". It was not uploaded '
+                         "again, because that would replace its existing claims and relationships.")
+        self.paper = paper
 
 
 class ModelUnavailableError(RuntimeError):
@@ -121,6 +131,10 @@ def _parallel(fn: Callable, items: Sequence) -> List:
         return list(ex.map(safe, items))
 
 
+def content_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def make_paper_id(title: str, data: bytes) -> str:
     return f"{ingest.slugify(title, 30)}-{hashlib.sha1(data).hexdigest()[:6]}"
 
@@ -128,7 +142,8 @@ def make_paper_id(title: str, data: bytes) -> str:
 # ---------- 1. ingest ----------
 def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, abstract_text: Optional[str] = None,
               doi: Optional[str] = None, url: Optional[str] = None, year: Optional[int] = None,
-              license: Optional[str] = None, access_level: Optional[str] = None, is_new: bool = False) -> Dict:
+              license: Optional[str] = None, access_level: Optional[str] = None, is_new: bool = False,
+              analysis_status: str = "complete") -> Dict:
     """Store a paper and its sentence index (replacing any previous version with the same id)."""
     ingest.check_paper_id(paper_id)
     if pdf_bytes:
@@ -141,7 +156,9 @@ def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, a
     with db.connect() as conn:
         db.delete_paper(conn, paper_id)
         db.insert_paper(conn, {"id": paper_id, "title": title, "doi": doi, "url": url, "year": year,
-                               "license": license, "access_level": level, "is_new": is_new})
+                               "license": license, "access_level": level, "is_new": is_new,
+                               "content_sha256": content_sha256(pdf_bytes) if pdf_bytes else None,
+                               "analysis_status": analysis_status})
         db.insert_sentences(conn, sentences)
     return {"paper_id": paper_id, "sentences": len(sentences), "access_level": level}
 
@@ -301,29 +318,36 @@ def _extract_or_discard(llm: LLM, paper_id: str, question: str) -> Tuple[List[in
             "please try again.") from exc
 
 
-def _check_upload(pdf_bytes: bytes, question: Optional[str]) -> str:
-    """Fail before storing anything: no question, or no extractable text."""
+def _check_upload(pdf_bytes: bytes, question: Optional[str], replace: bool = False) -> str:
+    """Fail before storing anything: no question, a PDF that is already stored (unless the caller
+    explicitly asked to replace it — only the seed CLI does), or no extractable text."""
     question = question or active_question()
+    if not replace:
+        with db.connect() as conn:
+            existing = db.paper_by_content(conn, content_sha256(pdf_bytes), hashlib.sha1(pdf_bytes).hexdigest()[:6])
+        if existing:
+            raise DuplicatePaperError(existing)
     ingest.extract_pages(pdf_bytes)  # raises NoExtractableTextError
     return question
 
 
 def add_library_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, doi: Optional[str] = None,
                       url: Optional[str] = None, year: Optional[int] = None, license: Optional[str] = None,
-                      question: Optional[str] = None) -> Dict:
+                      question: Optional[str] = None, replace: bool = False) -> Dict:
     """Initial-library upload: ingest, extract, and compare against the existing library. No impact analysis."""
-    question = _check_upload(pdf_bytes, question)
+    question = _check_upload(pdf_bytes, question, replace)
     timings, t0 = {}, time.time()
     title = (title or "").strip() or ingest.guess_title(pdf_bytes)
     paper_id = make_paper_id(title, pdf_bytes)
     info = add_paper(paper_id=paper_id, title=title, pdf_bytes=pdf_bytes, doi=doi, url=url, year=year,
-                     license=license, is_new=False)
+                     license=license, is_new=False, analysis_status="processing")
     timings["ingest"] = round(time.time() - t0, 1)
     claim_ids, report = _extract_or_discard(llm, paper_id, question)
     timings["extract"] = round(time.time() - t0, 1)
     rel_ids = compare_claims(llm, claim_ids, question)
     timings["compare"] = round(time.time() - t0, 1)
     with db.connect() as conn:
+        db.set_analysis_status(conn, paper_id, "complete")
         paper = db.get_paper(conn, paper_id)
         counts = db.analysis_counts(conn)
     return {"mode": "library", "question": question, "paper": paper_detail(paper),
@@ -335,9 +359,10 @@ def add_library_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
 
 def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, doi: Optional[str] = None,
                       url: Optional[str] = None, year: Optional[int] = None, license: Optional[str] = None,
-                      question: Optional[str] = None) -> Dict:
-    """The live demo step: evaluate a new paper against the existing claim graph."""
-    question = _check_upload(pdf_bytes, question)
+                      question: Optional[str] = None, replace: bool = False) -> Dict:
+    """The live demo step: evaluate a new paper against the existing claim graph.
+    A PDF that is already stored is rejected unless `replace=True` (explicit re-computation)."""
+    question = _check_upload(pdf_bytes, question, replace)
     with db.connect() as conn:
         if db.analysis_counts(conn)["library_claims"] == 0:
             raise NoLibraryError("There is no evidence library to evaluate against yet. "
@@ -346,7 +371,7 @@ def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
     title = (title or "").strip() or ingest.guess_title(pdf_bytes)
     paper_id = make_paper_id(title, pdf_bytes)
     add_paper(paper_id=paper_id, title=title, pdf_bytes=pdf_bytes, doi=doi, url=url, year=year,
-              license=license, is_new=True)
+              license=license, is_new=True, analysis_status="processing")
     timings["ingest"] = round(time.time() - t0, 1)
     claim_ids, report = _extract_or_discard(llm, paper_id, question)
     timings["extract"] = round(time.time() - t0, 1)
@@ -354,8 +379,26 @@ def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
     timings["compare"] = round(time.time() - t0, 1)
     assess_impact(llm, paper_id, question)
     timings["impact"] = round(time.time() - t0, 1)
+    with db.connect() as conn:
+        db.set_analysis_status(conn, paper_id, "complete")
     summary = impact_summary(paper_id, extraction=report)
     summary["timings_s"] = timings
     summary["mode"] = "evaluate"
     summary["question"] = question
     return summary
+
+
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def lookup_upload(sha256: str) -> Dict:
+    """Has this exact PDF (by full SHA-256) been stored, and has its analysis finished?
+    Used by the UI to reconcile an upload whose HTTP request timed out or lost its connection."""
+    digest = (sha256 or "").strip().lower()
+    if not SHA256_RE.match(digest):
+        raise ValueError("sha256 must be 64 hex characters")
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM papers WHERE content_sha256 = %s LIMIT 1", (digest,)).fetchone()
+    if not row:
+        return {"found": False, "status": None, "paper": None}
+    return {"found": True, "status": row["analysis_status"], "paper": paper_detail(row)}

@@ -103,12 +103,16 @@ def test_model_failure_is_recorded_as_unresolved(setup):
     assert rels and all(r["label"] == "unresolved" and r["explanation"] == pipeline.FAILED_PAIR for r in rels)
 
 
-def test_reupload_replaces_previous_version(setup):
+def test_reupload_is_rejected_unless_replace_is_explicit(setup):
     llm = FakeLLM()
     seed(llm)
     same_file = pdf(PAPER_D[1])
     s1 = pipeline.process_new_paper(llm, same_file, title=PAPER_D[0])
-    s2 = pipeline.process_new_paper(llm, same_file, title=PAPER_D[0])
+    with pytest.raises(pipeline.DuplicatePaperError):
+        pipeline.process_new_paper(llm, same_file, title="Other title")
+    with pytest.raises(pipeline.DuplicatePaperError):
+        pipeline.add_library_paper(llm, same_file)
+    s2 = pipeline.process_new_paper(llm, same_file, title=PAPER_D[0], replace=True)  # seed CLI only
     assert s1["paper"]["id"] == s2["paper"]["id"]
     with db.connect() as conn:
         assert len([p for p in db.all_papers(conn) if p["is_new"]]) == 1

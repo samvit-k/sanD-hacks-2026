@@ -5,7 +5,7 @@ from typing import List
 
 import numpy as np
 
-from app.contracts import (Conditions, ExtractedClaim, ExtractionResult, ImpactJudgment, PairJudgment)
+from app.contracts import (ChatAnswer, Conditions, ExtractedClaim, ExtractionResult, ImpactJudgment, PairJudgment)
 
 _LINE = re.compile(r"^\[([a-z0-9-]+:p\d+_s\d+)\] \((\w+)\) (.*)$")
 _ID = re.compile(r"\[([a-z0-9-]+:p\d+_s\d+)\]")
@@ -19,6 +19,8 @@ class FakeLLM:
         self.fabricate = fabricate      # cite a non-existent ID in judgments
         self.fail_pairs = fail_pairs    # raise on pair comparisons
         self.pair_label = pair_label
+        self.chat_answer = None          # set to a ChatAnswer to script the next chat replies
+        self.fail_chat = False
         self.prompts: List[str] = []
 
     def count(self, marker: str) -> int:
@@ -45,6 +47,17 @@ class FakeLLM:
                     claims.append(ExtractedClaim(text=m.group(3), sentence_ids=[m.group(1)],
                                                  conditions=Conditions(duration=dur.group(1) if dur else None)))
             return ExtractionResult(claims=claims)
+        if model_cls is ChatAnswer:
+            if self.fail_chat:
+                raise RuntimeError("simulated Gemini outage")
+            if self.chat_answer is not None:
+                return self.chat_answer
+            # Default: a grounded answer about the first claim shown, citing its first source sentence.
+            claims = prompt.split("SOURCE SENTENCES:", 1)[1]
+            token = re.search(r"\[\[(claim:\d+)\]\]", claims).group(1)
+            sid = _ID.search(claims).group(1)
+            return ChatAnswer(answer=f"According to [[{token}]], the reported result relates to [[q]].",
+                              cited_sentence_ids=[sid], insufficient_evidence=False)
         first, second = self._two_blocks(prompt)
         ids = [first[0], second[0]] + (["zz-fake:p9_s9"] if self.fabricate else [])
         if model_cls is PairJudgment:

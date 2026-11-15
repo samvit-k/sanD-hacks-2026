@@ -32,7 +32,9 @@ export function useResearch() {
     status: 'loading', source: null, graph: null, workspace: null, impact: null, checks: null, health: null, error: null,
   })
 
-  const refresh = useCallback(async () => {
+  // `fallback: false` (used after uploads) never swaps live data for fixtures: on failure it keeps the
+  // current view and throws, so the caller can say "refresh failed" and retry just the refresh.
+  const refresh = useCallback(async ({ fallback = true } = {}) => {
     try {
       // graph + workspace are required; impact, checks and health are optional and never trigger the fallback.
       const [graph, workspace, impact, checks, health] = await Promise.all([
@@ -45,6 +47,7 @@ export function useResearch() {
       setState({ status: 'ready', source: 'live', graph, workspace, impact, checks, health, error: null })
       return { graph, workspace, impact }
     } catch (error) {
+      if (!fallback) throw error
       try {
         const graph = await loadFixture('graph_with_new.json')
         const source = fixtureSource(graph)

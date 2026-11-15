@@ -49,8 +49,50 @@ def delete_all(conn) -> None:
     """Delete all analysis (papers and everything derived from them). Keeps the workspace question
     and the discovery cache (keyed by search query, independent of the question).
     TRUNCATE is transactional in PostgreSQL: it is undone if the surrounding transaction rolls back."""
-    conn.execute("TRUNCATE papers, sentences, claims, relationships, impacts, discovery_links, node_refs "
-                 "RESTART IDENTITY CASCADE")
+    # The conversation refers to nodes/sentences of this analysis, so it is cleared with it.
+    conn.execute("TRUNCATE papers, sentences, claims, relationships, impacts, discovery_links, node_refs, "
+                 "chat_messages RESTART IDENTITY CASCADE")
+
+
+# ---------- chat ----------
+def insert_chat_message(conn, m: Dict) -> Dict:
+    return conn.execute(
+        """INSERT INTO chat_messages (session_id, role, content, context, cited_sentence_ids,
+                                      insufficient_evidence, guardrail)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (m["session_id"], m["role"], m["content"], Jsonb(m.get("context")) if m.get("context") else None,
+         m.get("cited_sentence_ids") or [], bool(m.get("insufficient_evidence")), m.get("guardrail")),
+    ).fetchone()
+
+
+def chat_messages(conn, session_id: str, limit: int = 200) -> List[Dict]:
+    rows = conn.execute(
+        "SELECT * FROM chat_messages WHERE session_id = %s ORDER BY id DESC LIMIT %s", (session_id, limit)
+    ).fetchall()
+    return list(reversed(rows))
+
+
+def node_ref_map(conn) -> Dict[str, int]:
+    return {r["node_id"]: r["num"] for r in conn.execute("SELECT node_id, num FROM node_refs")}
+
+
+def nearest_claims(conn, embedding, k: int) -> List[int]:
+    """pgvector cosine search over all stored claims."""
+    rows = conn.execute(
+        "SELECT id FROM claims WHERE embedding IS NOT NULL ORDER BY embedding <=> %s LIMIT %s",
+        (np.asarray(embedding, dtype=np.float32), k),
+    ).fetchall()
+    return [r["id"] for r in rows]
+
+
+def paper_by_content(conn, sha256: str, sha1_6: Optional[str] = None) -> Optional[Dict]:
+    """The stored paper made from exactly this PDF. Matches the full SHA-256 recorded at upload; papers
+    stored before that column existed (content_sha256 IS NULL) fall back to the sha1 suffix of their id."""
+    row = conn.execute("SELECT * FROM papers WHERE content_sha256 = %s LIMIT 1", (sha256,)).fetchone()
+    if row or not sha1_6:
+        return row
+    return conn.execute("SELECT * FROM papers WHERE content_sha256 IS NULL AND right(id, 7) = %s LIMIT 1",
+                        ("-" + sha1_6,)).fetchone()
 
 
 # ---------- stable node display numbers ----------
@@ -101,10 +143,17 @@ def analysis_counts(conn) -> Dict[str, int]:
 
 def insert_paper(conn, p: Dict) -> None:
     conn.execute(
-        """INSERT INTO papers (id, title, doi, url, year, access_level, license, is_new)
-           VALUES (%(id)s, %(title)s, %(doi)s, %(url)s, %(year)s, %(access_level)s, %(license)s, %(is_new)s)""",
-        {"doi": None, "url": None, "year": None, "license": None, "is_new": False, "access_level": "full", **p},
+        """INSERT INTO papers (id, title, doi, url, year, access_level, license, is_new, content_sha256,
+                                analysis_status)
+           VALUES (%(id)s, %(title)s, %(doi)s, %(url)s, %(year)s, %(access_level)s, %(license)s, %(is_new)s,
+                   %(content_sha256)s, %(analysis_status)s)""",
+        {"doi": None, "url": None, "year": None, "license": None, "is_new": False, "access_level": "full",
+         "content_sha256": None, "analysis_status": "complete", **p},
     )
+
+
+def set_analysis_status(conn, paper_id: str, status: str) -> None:
+    conn.execute("UPDATE papers SET analysis_status = %s WHERE id = %s", (status, paper_id))
 
 
 def insert_sentences(conn, sentences: List[Dict]) -> None:

@@ -30,6 +30,7 @@
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --tb-h: 64px;
   --sb-w: 330px;
+  --as-w: 400px;
 
   /* ResearchLens node + evidence palette (BioOKF type colours, re-mapped) */
   --c-question: #20242a;

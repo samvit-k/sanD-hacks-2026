@@ -199,3 +199,33 @@ Cytoscape elements plus every detail the inspectors need (no second request need
 
 ## Demo fallback fixtures (`frontend/public/fixtures/`)
 `graph.json` (library only), `graph_with_new.json` and `paper_d_result.json` (`status: "precomputed"`) have the same shapes as above. They are currently **fictional samples**. Replace them with real output by running `scripts/snapshot.py --stage before` and `--stage after`.
+
+## Research assistant (Stage B)
+
+All chat calls are scoped by `session_id` (default `"default"`; pattern `[a-z0-9][a-z0-9-]{0,39}`) so separate
+research sessions can be added without changing this contract.
+
+### `GET /api/chat/messages?session_id=default`
+`{session_id, messages: [Message]}` in chronological order.
+
+### `POST /api/chat`
+Body: `{message: str (1–2000 chars), context?: {kind: "question"|"paper"|"claim"|"relationship", id}, session_id?}`.
+Returns `{session_id, user: Message, assistant: Message, retrieved: {claims, relationships, impacts}}`.
+Errors: 409 no research question · 422 invalid input · 503 Gemini unavailable (nothing is stored).
+
+`Message`: `{id, session_id, role: "user"|"assistant", content, context, insufficient_evidence, guardrail,
+created_at, cited: [{id, paper_id, page, section, text, paper_title}], references: {token: {kind, id, node_id, ref?, refs?, missing}}}`.
+- `content` may contain graph tokens `[[q]]`, `[[paper:<id>]]`, `[[claim:<n>]]`, `[[rel:<n>]]`; `references` resolves
+  each to its stable node number (`ref`, or `refs` = [claim A, claim B] for relationships).
+- `cited` quotes are rebuilt from stored PDF sentences, never from model text.
+- `guardrail` is set (and `content` is an explanation, `cited` empty) when the answer was withheld:
+  `invalid_citations`, `invalid_references`, `unverified_quotation`, or `uncited_findings`
+  (research statements without any verified source sentence).
+
+### `GET /api/papers/lookup?sha256=<64 hex>`
+Reconciles an upload whose request timed out: `{found, status: "processing"|"complete"|null, paper}` for the PDF
+with exactly this content hash.
+
+### Upload duplicates
+`POST /api/papers` returns **409** `{message, code: "duplicate", paper_id, title}` when the same PDF (by content)
+is already stored. Nothing is changed and no model calls are made.

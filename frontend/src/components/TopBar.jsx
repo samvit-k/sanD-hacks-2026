@@ -37,7 +37,9 @@ function ServiceDots({ health }) {
   )
 }
 
-export default function TopBar({ graph, workspace, checks, health, source, query, onQuery, onPick, filters, onFilters }) {
+export default function TopBar({
+  graph, workspace, checks, health, source, query, onQuery, onPick, filters, onFilters, assistantOpen, onToggleAssistant,
+}) {
   const c = workspace?.counts ?? {}
   return (
     <header className="topbar">
@@ -52,6 +54,13 @@ export default function TopBar({ graph, workspace, checks, health, source, query
         <SearchBox graph={graph} query={query} onQuery={onQuery} onPick={onPick} />
         <FilterPopover graph={graph} filters={filters} onChange={onFilters} />
         <ServiceDots health={health} />
+        {onToggleAssistant && (
+          <button type="button" className={`btn ${assistantOpen ? 'btn-on' : ''}`} onClick={onToggleAssistant}
+            aria-pressed={!!assistantOpen} aria-controls="assistant-panel" title="Research assistant and PDF uploads">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" /></svg>
+            Assistant
+          </button>
+        )}
       </div>
     </header>
   )

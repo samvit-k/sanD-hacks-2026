@@ -1,5 +1,5 @@
 import { INSUFFICIENT, RELATIONSHIPS } from '../../graph/vocab.js'
-import { AccessBadge, ConditionDiffTable, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
+import { AccessBadge, AskButton, ConditionDiffTable, ModelBox, NodeChip, QuoteList, RelPill, Section } from './parts.jsx'
 
 const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : '—')
 
@@ -25,7 +25,7 @@ function ClaimColumn({ side, claim, cited, n, insufficient, onNavigate }) {
   )
 }
 
-export default function RelationshipView({ rel, graph, refs, onNavigate }) {
+export default function RelationshipView({ rel, graph, refs, onNavigate, onAsk }) {
   const insufficient = rel.insufficient_evidence
   const nA = refs[`claim:${rel.claim_a.id}`]
   const nB = refs[`claim:${rel.claim_b.id}`]
@@ -81,9 +81,7 @@ export default function RelationshipView({ rel, graph, refs, onNavigate }) {
         <span className="insp-small">
           Embedding similarity {fmt(rel.similarity)} — used only to select this pair for comparison.
         </span>
-        <button type="button" className="btn btn-sm" disabled title="The research assistant chat is not available yet.">
-          Ask about this connection
-        </button>
+        <AskButton label="Ask about this connection" onAsk={onAsk} context={{ kind: 'relationship', id: rel.id }} />
       </div>
     </>
   )

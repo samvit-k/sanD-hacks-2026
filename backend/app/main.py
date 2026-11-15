@@ -1,13 +1,13 @@
 """ResearchLens API. Run from backend/: .venv/bin/uvicorn app.main:app --reload --port 8000"""
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import db, discover as discovery, pipeline
+from . import chat, db, discover as discovery, pipeline
 from .config import settings
 from .ingest import NoExtractableTextError
 from .llm import get_llm
@@ -97,6 +97,15 @@ def latest_impact():
 UPLOAD_MODES = ("library", "evaluate")
 
 
+@app.get("/api/papers/lookup")
+def lookup_paper(sha256: str):
+    """Reconcile an uncertain upload: is THIS exact PDF stored, and is its analysis complete?"""
+    try:
+        return _db_guard(lambda: pipeline.lookup_upload(sha256))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.post("/api/papers")
 def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None), doi: Optional[str] = Form(None),
                  url: Optional[str] = Form(None), year: Optional[int] = Form(None),
@@ -121,6 +130,10 @@ def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None)
         raise HTTPException(422, str(exc))
     except (pipeline.NoQuestionError, pipeline.NoLibraryError) as exc:
         raise HTTPException(409, str(exc))
+    except pipeline.DuplicatePaperError as exc:
+        # Nothing was stored or changed; the existing paper keeps its analysis.
+        raise HTTPException(409, {"message": str(exc), "code": "duplicate", "paper_id": exc.paper["id"],
+                                  "title": exc.paper["title"]})
     except pipeline.ModelUnavailableError as exc:
         raise HTTPException(503, str(exc))
 
@@ -158,3 +171,44 @@ def checks():
             v = db.integrity_violations(conn)
         return {"ok": all(not ids for ids in v.values()), "violations": v}
     return _db_guard(run)
+
+
+# ---------- research assistant (chat) ----------
+class ChatContext(BaseModel):
+    kind: str
+    id: Optional[object] = None
+
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[ChatContext] = None
+    session_id: Optional[str] = None
+
+
+@app.get("/api/chat/messages")
+def chat_messages(session_id: Optional[str] = None):
+    """Stored conversation for a session (default session until Stage D adds more)."""
+    try:
+        return {"session_id": chat.check_session(session_id), "messages": _db_guard(lambda: chat.history(session_id))}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@app.post("/api/chat")
+def ask_chat(req: ChatRequest):
+    """Evidence-grounded answer. Unverifiable answers are withheld (see app/chat.py)."""
+    try:
+        question = pipeline.active_question()
+    except pipeline.NoQuestionError as exc:
+        raise HTTPException(409, str(exc))
+    try:
+        llm = get_llm()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    context: Optional[Dict] = req.context.model_dump() if req.context else None
+    try:
+        return _db_guard(lambda: chat.ask(llm, question, req.message, context=context, session_id=req.session_id))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except chat.ChatUnavailableError as exc:
+        raise HTTPException(503, str(exc))
