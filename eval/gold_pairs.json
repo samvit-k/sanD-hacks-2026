@@ -1,0 +1,28 @@
+{
+  "_instructions": "Fill in 8-10 manually reviewed pairs after seeding (Checkpoint 2). Match claims by paper_id + a distinctive substring of the claim text. Include at least one pair with DIFFERENT conditions but COMPATIBLE results. The entries below are placeholders — replace them with real claims from your papers.",
+  "pairs": [
+    {
+      "id": "g1",
+      "claim_a": {"paper_id": "paper-a", "contains": "REPLACE: words from claim A"},
+      "claim_b": {"paper_id": "paper-b", "contains": "REPLACE: words from claim B"},
+      "label": "apparent_contradiction",
+      "reason": "Same outcome measure; 12 weeks vs 2 weeks plausibly explains the different results."
+    },
+    {
+      "id": "g2",
+      "claim_a": {"paper_id": "paper-a", "contains": "REPLACE"},
+      "claim_b": {"paper_id": "paper-c", "contains": "REPLACE"},
+      "label": "supports",
+      "reason": "Different populations but compatible positive results (conditions differ, results agree)."
+    }
+  ],
+  "impacts": [
+    {
+      "id": "i1",
+      "new_claim": {"paper_id": "REPLACE-with-paper-d-id", "contains": "REPLACE"},
+      "prior_claim": {"paper_id": "paper-a", "contains": "REPLACE"},
+      "impact": "qualifies",
+      "reason": "D shows short-term gains were not retained; A measured short-term scores only."
+    }
+  ]
+}

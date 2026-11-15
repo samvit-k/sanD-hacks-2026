@@ -1,0 +1,45 @@
+/* Design tokens adapted from BioOKF Studio (app/studio/dist/index.html):
+   flat neutral near-whites, restrained ink, one sky accent, hairlines over heavy shadow. */
+:root {
+  --bg: #ffffff;
+  --bg-sidebar: #f9f9f9;
+  --bg-stage: #fafaf9;
+  --bg-elev: #ffffff;
+  --bg-sunken: #f4f4f3;
+  --hover: rgba(13, 13, 13, 0.045);
+  --active: rgba(13, 13, 13, 0.075);
+  --text: #0d0d0d;
+  --ink: #1c2128;
+  --muted: #5b5d66;
+  --faint: #8e8ea0;
+  --hair: rgba(13, 13, 13, 0.10);
+  --hair-2: rgba(13, 13, 13, 0.06);
+  --accent: #0ea5e9;
+  --accent-ink: #0369a1;
+  --accent-soft: rgba(14, 165, 233, 0.12);
+  --danger: #c4564b;
+  --warn: #b07d3a;
+  --ok: #3f9e6e;
+  --shadow-sm: 0 1px 2px rgba(13, 13, 13, 0.06);
+  --shadow-md: 0 8px 28px rgba(13, 13, 13, 0.10);
+  --r-xs: 5px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --tb-h: 64px;
+  --sb-w: 330px;
+
+  /* ResearchLens node + evidence palette (BioOKF type colours, re-mapped) */
+  --c-question: #20242a;
+  --c-paper: #6366A8;
+  --c-paper-abstract: #8A86C4;
+  --c-claim: #2E8C84;
+  --c-claim-new: #38bdf8;
+  --c-discovery: #e5e7eb;
+  --c-supports: #3f9e6e;
+  --c-contradiction: #c4564b;
+  --c-unresolved: #b07d3a;
+  --c-notcomparable: rgba(29, 35, 42, 0.32);
+}

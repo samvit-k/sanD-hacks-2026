@@ -1,0 +1,279 @@
+{
+ "status": "precomputed",
+ "paper": {
+  "id": "sample-d",
+  "title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+  "doi": null,
+  "url": null,
+  "year": 2025,
+  "access_level": "full",
+  "license": null,
+  "is_new": true,
+  "relevance": 0.88
+ },
+ "new_claims": [
+  {
+   "id": 4,
+   "paper_id": "sample-d",
+   "paper_title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+   "access_level": "full",
+   "text": "12-week AI tutoring gains were not retained six months later.",
+   "conditions": {
+    "population": "Grade 8 students",
+    "sample_size": "n=180",
+    "method": "Longitudinal follow-up of an RCT",
+    "duration": "12 weeks + 6-month follow-up",
+    "outcome_measure": "Retention test score"
+   },
+   "quotes": [
+    {
+     "id": "sample-d:p7_s2",
+     "paper_id": "sample-d",
+     "page": 7,
+     "section": "results",
+     "text": "Test-score gains observed at the end of a 12-week AI tutoring programme were no longer detectable six months later."
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "paper_id": "sample-d",
+   "paper_title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+   "access_level": "full",
+   "text": "Retention of gains did not differ by prior achievement.",
+   "conditions": {
+    "population": "Grade 8 students",
+    "sample_size": "n=180",
+    "method": "Longitudinal follow-up of an RCT",
+    "duration": "12 weeks + 6-month follow-up",
+    "outcome_measure": "Retention test score"
+   },
+   "quotes": [
+    {
+     "id": "sample-d:p7_s3",
+     "paper_id": "sample-d",
+     "page": 7,
+     "section": "results",
+     "text": "Retention did not differ by students' prior achievement."
+    }
+   ]
+  }
+ ],
+ "counts": {
+  "strengthens": 0,
+  "challenges": 0,
+  "qualifies": 1,
+  "leaves_unresolved": 2,
+  "not_addressed": 0
+ },
+ "impacts": [
+  {
+   "id": 1,
+   "impact": "qualifies",
+   "rationale": "D does not dispute A's immediate 25% gain; it shows that, under comparable conditions, the gain was not detectable six months later. A's finding holds for short-term outcomes only.",
+   "insufficient_evidence": false,
+   "relationship_id": 3,
+   "prior_claim": {
+    "id": 1,
+    "paper_id": "sample-a",
+    "paper_title": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+    "access_level": "full",
+    "text": "AI tutoring raised grade 8 math test scores by 25% after 12 weeks.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=240",
+     "method": "Randomized controlled trial",
+     "duration": "12 weeks",
+     "outcome_measure": "End-of-unit mathematics test",
+     "significance": "p < 0.01"
+    },
+    "quotes": [
+     {
+      "id": "sample-a:p6_s3",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+     },
+     {
+      "id": "sample-a:p6_s4",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "The effect was consistent across the four participating schools."
+     }
+    ]
+   },
+   "new_claim": {
+    "id": 4,
+    "paper_id": "sample-d",
+    "paper_title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+    "access_level": "full",
+    "text": "12-week AI tutoring gains were not retained six months later.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=180",
+     "method": "Longitudinal follow-up of an RCT",
+     "duration": "12 weeks + 6-month follow-up",
+     "outcome_measure": "Retention test score"
+    },
+    "quotes": [
+     {
+      "id": "sample-d:p7_s2",
+      "paper_id": "sample-d",
+      "page": 7,
+      "section": "results",
+      "text": "Test-score gains observed at the end of a 12-week AI tutoring programme were no longer detectable six months later."
+     }
+    ]
+   },
+   "cited": [
+    {
+     "id": "sample-a:p6_s3",
+     "paper_id": "sample-a",
+     "page": 6,
+     "section": "results",
+     "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+    },
+    {
+     "id": "sample-d:p7_s2",
+     "paper_id": "sample-d",
+     "page": 7,
+     "section": "results",
+     "text": "Test-score gains observed at the end of a 12-week AI tutoring programme were no longer detectable six months later."
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "impact": "leaves_unresolved",
+   "rationale": "D measured retention rather than immediate gains, so it neither supports nor conflicts with C's finding about immediate gains by prior achievement.",
+   "insufficient_evidence": false,
+   "relationship_id": 4,
+   "prior_claim": {
+    "id": 3,
+    "paper_id": "sample-c",
+    "paper_title": "[Sample] Who benefits? AI tutors and prior achievement",
+    "access_level": "abstract",
+    "text": "AI tutoring gains were larger for students with lower prior achievement.",
+    "conditions": {
+     "population": "Grade 7-9 students",
+     "method": "Quasi-experimental",
+     "outcome_measure": "Mathematics test"
+    },
+    "quotes": [
+     {
+      "id": "sample-c:p1_s4",
+      "paper_id": "sample-c",
+      "page": 1,
+      "section": "abstract",
+      "text": "Gains from AI tutoring were roughly twice as large for students with below-median prior achievement."
+     }
+    ]
+   },
+   "new_claim": {
+    "id": 5,
+    "paper_id": "sample-d",
+    "paper_title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+    "access_level": "full",
+    "text": "Retention of gains did not differ by prior achievement.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=180",
+     "method": "Longitudinal follow-up of an RCT",
+     "duration": "12 weeks + 6-month follow-up",
+     "outcome_measure": "Retention test score"
+    },
+    "quotes": [
+     {
+      "id": "sample-d:p7_s3",
+      "paper_id": "sample-d",
+      "page": 7,
+      "section": "results",
+      "text": "Retention did not differ by students' prior achievement."
+     }
+    ]
+   },
+   "cited": [
+    {
+     "id": "sample-c:p1_s4",
+     "paper_id": "sample-c",
+     "page": 1,
+     "section": "abstract",
+     "text": "Gains from AI tutoring were roughly twice as large for students with below-median prior achievement."
+    },
+    {
+     "id": "sample-d:p7_s3",
+     "paper_id": "sample-d",
+     "page": 7,
+     "section": "results",
+     "text": "Retention did not differ by students' prior achievement."
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "impact": "leaves_unresolved",
+   "rationale": "Insufficient evidence: the assessment could not be verified against valid source sentences from both papers, so no judgment is shown.",
+   "insufficient_evidence": true,
+   "relationship_id": 5,
+   "prior_claim": {
+    "id": 2,
+    "paper_id": "sample-b",
+    "paper_title": "[Sample] A two-week classroom trial of an AI tutor",
+    "access_level": "full",
+    "text": "Two weeks of AI tutoring produced no significant test-score improvement.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=60",
+     "method": "Randomized controlled trial",
+     "duration": "2 weeks",
+     "outcome_measure": "End-of-unit mathematics test",
+     "significance": "p = 0.41",
+     "limitations": "Short duration"
+    },
+    "quotes": [
+     {
+      "id": "sample-b:p4_s1",
+      "paper_id": "sample-b",
+      "page": 4,
+      "section": "results",
+      "text": "After two weeks, test scores did not differ significantly between the tutor and control groups (p = 0.41)."
+     }
+    ]
+   },
+   "new_claim": {
+    "id": 4,
+    "paper_id": "sample-d",
+    "paper_title": "[Sample] Do AI tutor gains last? A six-month follow-up",
+    "access_level": "full",
+    "text": "12-week AI tutoring gains were not retained six months later.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=180",
+     "method": "Longitudinal follow-up of an RCT",
+     "duration": "12 weeks + 6-month follow-up",
+     "outcome_measure": "Retention test score"
+    },
+    "quotes": [
+     {
+      "id": "sample-d:p7_s2",
+      "paper_id": "sample-d",
+      "page": 7,
+      "section": "results",
+      "text": "Test-score gains observed at the end of a 12-week AI tutoring programme were no longer detectable six months later."
+     }
+    ]
+   },
+   "cited": []
+  }
+ ],
+ "not_addressed": [],
+ "extraction": {
+  "returned": 2,
+  "kept": 2,
+  "rejected_invalid_citations": 0,
+  "rejected_empty_text": 0,
+  "rejected_over_limit": 0
+ }
+}

@@ -1,0 +1,485 @@
+{
+ "question": "Do AI tutors improve learning?",
+ "meta": {
+  "source": "sample"
+ },
+ "nodes": [
+  {
+   "data": {
+    "id": "q",
+    "type": "question",
+    "label": "Do AI tutors improve learning?"
+   }
+  },
+  {
+   "data": {
+    "id": "paper:sample-a",
+    "type": "paper",
+    "label": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+    "paper_id": "sample-a",
+    "access_level": "full",
+    "is_new": false,
+    "relevance": 0.91
+   }
+  },
+  {
+   "data": {
+    "id": "paper:sample-b",
+    "type": "paper",
+    "label": "[Sample] A two-week classroom trial of an AI tutor",
+    "paper_id": "sample-b",
+    "access_level": "full",
+    "is_new": false,
+    "relevance": 0.84
+   }
+  },
+  {
+   "data": {
+    "id": "paper:sample-c",
+    "type": "paper",
+    "label": "[Sample] Who benefits? AI tutors and prior achievement",
+    "paper_id": "sample-c",
+    "access_level": "abstract",
+    "is_new": false,
+    "relevance": 0.72
+   }
+  },
+  {
+   "data": {
+    "id": "claim:1",
+    "type": "claim",
+    "label": "AI tutoring raised grade 8 math test scores by 25% after 12 weeks.",
+    "claim_id": 1,
+    "paper_id": "sample-a",
+    "paper_node": "paper:sample-a",
+    "is_new": false
+   }
+  },
+  {
+   "data": {
+    "id": "claim:2",
+    "type": "claim",
+    "label": "Two weeks of AI tutoring produced no significant test-score improveme\u2026",
+    "claim_id": 2,
+    "paper_id": "sample-b",
+    "paper_node": "paper:sample-b",
+    "is_new": false
+   }
+  },
+  {
+   "data": {
+    "id": "claim:3",
+    "type": "claim",
+    "label": "AI tutoring gains were larger for students with lower prior achieveme\u2026",
+    "claim_id": 3,
+    "paper_id": "sample-c",
+    "paper_node": "paper:sample-c",
+    "is_new": false
+   }
+  }
+ ],
+ "edges": [
+  {
+   "data": {
+    "id": "about:sample-a",
+    "source": "q",
+    "target": "paper:sample-a",
+    "type": "question_paper",
+    "relevance": 0.91
+   }
+  },
+  {
+   "data": {
+    "id": "about:sample-b",
+    "source": "q",
+    "target": "paper:sample-b",
+    "type": "question_paper",
+    "relevance": 0.84
+   }
+  },
+  {
+   "data": {
+    "id": "about:sample-c",
+    "source": "q",
+    "target": "paper:sample-c",
+    "type": "question_paper",
+    "relevance": 0.72
+   }
+  },
+  {
+   "data": {
+    "id": "has:1",
+    "source": "paper:sample-a",
+    "target": "claim:1",
+    "type": "has_claim"
+   }
+  },
+  {
+   "data": {
+    "id": "has:2",
+    "source": "paper:sample-b",
+    "target": "claim:2",
+    "type": "has_claim"
+   }
+  },
+  {
+   "data": {
+    "id": "has:3",
+    "source": "paper:sample-c",
+    "target": "claim:3",
+    "type": "has_claim"
+   }
+  },
+  {
+   "data": {
+    "id": "rel:1",
+    "source": "claim:1",
+    "target": "claim:2",
+    "type": "relationship",
+    "label": "apparent_contradiction",
+    "relationship_id": 1,
+    "insufficient_evidence": false
+   }
+  },
+  {
+   "data": {
+    "id": "rel:2",
+    "source": "claim:1",
+    "target": "claim:3",
+    "type": "relationship",
+    "label": "supports",
+    "relationship_id": 2,
+    "insufficient_evidence": false
+   }
+  }
+ ],
+ "papers": {
+  "sample-a": {
+   "id": "sample-a",
+   "title": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+   "doi": null,
+   "url": null,
+   "year": 2023,
+   "access_level": "full",
+   "license": null,
+   "is_new": false,
+   "relevance": 0.91
+  },
+  "sample-b": {
+   "id": "sample-b",
+   "title": "[Sample] A two-week classroom trial of an AI tutor",
+   "doi": null,
+   "url": null,
+   "year": 2022,
+   "access_level": "full",
+   "license": null,
+   "is_new": false,
+   "relevance": 0.84
+  },
+  "sample-c": {
+   "id": "sample-c",
+   "title": "[Sample] Who benefits? AI tutors and prior achievement",
+   "doi": null,
+   "url": null,
+   "year": 2024,
+   "access_level": "abstract",
+   "license": null,
+   "is_new": false,
+   "relevance": 0.72
+  }
+ },
+ "claims": {
+  "1": {
+   "id": 1,
+   "paper_id": "sample-a",
+   "paper_title": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+   "access_level": "full",
+   "text": "AI tutoring raised grade 8 math test scores by 25% after 12 weeks.",
+   "conditions": {
+    "population": "Grade 8 students",
+    "sample_size": "n=240",
+    "method": "Randomized controlled trial",
+    "duration": "12 weeks",
+    "outcome_measure": "End-of-unit mathematics test",
+    "significance": "p < 0.01"
+   },
+   "quotes": [
+    {
+     "id": "sample-a:p6_s3",
+     "paper_id": "sample-a",
+     "page": 6,
+     "section": "results",
+     "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+    },
+    {
+     "id": "sample-a:p6_s4",
+     "paper_id": "sample-a",
+     "page": 6,
+     "section": "results",
+     "text": "The effect was consistent across the four participating schools."
+    }
+   ]
+  },
+  "2": {
+   "id": 2,
+   "paper_id": "sample-b",
+   "paper_title": "[Sample] A two-week classroom trial of an AI tutor",
+   "access_level": "full",
+   "text": "Two weeks of AI tutoring produced no significant test-score improvement.",
+   "conditions": {
+    "population": "Grade 8 students",
+    "sample_size": "n=60",
+    "method": "Randomized controlled trial",
+    "duration": "2 weeks",
+    "outcome_measure": "End-of-unit mathematics test",
+    "significance": "p = 0.41",
+    "limitations": "Short duration"
+   },
+   "quotes": [
+    {
+     "id": "sample-b:p4_s1",
+     "paper_id": "sample-b",
+     "page": 4,
+     "section": "results",
+     "text": "After two weeks, test scores did not differ significantly between the tutor and control groups (p = 0.41)."
+    }
+   ]
+  },
+  "3": {
+   "id": 3,
+   "paper_id": "sample-c",
+   "paper_title": "[Sample] Who benefits? AI tutors and prior achievement",
+   "access_level": "abstract",
+   "text": "AI tutoring gains were larger for students with lower prior achievement.",
+   "conditions": {
+    "population": "Grade 7-9 students",
+    "method": "Quasi-experimental",
+    "outcome_measure": "Mathematics test"
+   },
+   "quotes": [
+    {
+     "id": "sample-c:p1_s4",
+     "paper_id": "sample-c",
+     "page": 1,
+     "section": "abstract",
+     "text": "Gains from AI tutoring were roughly twice as large for students with below-median prior achievement."
+    }
+   ]
+  }
+ },
+ "relationships": {
+  "1": {
+   "id": 1,
+   "label": "apparent_contradiction",
+   "similarity": 0.83,
+   "insufficient_evidence": false,
+   "explanation": "Both studies measured the same test in the same population, but A ran for 12 weeks and B for 2 weeks; B's authors note the short duration may explain the null result.",
+   "key_differences": [
+    "duration",
+    "sample_size"
+   ],
+   "condition_diff": {
+    "population": "same",
+    "sample_size": [
+     "n=240",
+     "n=60"
+    ],
+    "method": "same",
+    "duration": [
+     "12 weeks",
+     "2 weeks"
+    ],
+    "outcome_measure": "same"
+   },
+   "claim_a": {
+    "id": 1,
+    "paper_id": "sample-a",
+    "paper_title": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+    "access_level": "full",
+    "text": "AI tutoring raised grade 8 math test scores by 25% after 12 weeks.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=240",
+     "method": "Randomized controlled trial",
+     "duration": "12 weeks",
+     "outcome_measure": "End-of-unit mathematics test",
+     "significance": "p < 0.01"
+    },
+    "quotes": [
+     {
+      "id": "sample-a:p6_s3",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+     },
+     {
+      "id": "sample-a:p6_s4",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "The effect was consistent across the four participating schools."
+     }
+    ]
+   },
+   "claim_b": {
+    "id": 2,
+    "paper_id": "sample-b",
+    "paper_title": "[Sample] A two-week classroom trial of an AI tutor",
+    "access_level": "full",
+    "text": "Two weeks of AI tutoring produced no significant test-score improvement.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=60",
+     "method": "Randomized controlled trial",
+     "duration": "2 weeks",
+     "outcome_measure": "End-of-unit mathematics test",
+     "significance": "p = 0.41",
+     "limitations": "Short duration"
+    },
+    "quotes": [
+     {
+      "id": "sample-b:p4_s1",
+      "paper_id": "sample-b",
+      "page": 4,
+      "section": "results",
+      "text": "After two weeks, test scores did not differ significantly between the tutor and control groups (p = 0.41)."
+     }
+    ]
+   },
+   "cited": {
+    "a": [
+     {
+      "id": "sample-a:p6_s3",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+     }
+    ],
+    "b": [
+     {
+      "id": "sample-b:p4_s1",
+      "paper_id": "sample-b",
+      "page": 4,
+      "section": "results",
+      "text": "After two weeks, test scores did not differ significantly between the tutor and control groups (p = 0.41)."
+     },
+     {
+      "id": "sample-b:p5_s2",
+      "paper_id": "sample-b",
+      "page": 5,
+      "section": "discussion",
+      "text": "The short duration may have been insufficient for effects to emerge."
+     }
+    ]
+   }
+  },
+  "2": {
+   "id": 2,
+   "label": "supports",
+   "similarity": 0.71,
+   "insufficient_evidence": false,
+   "explanation": "C reports positive gains (larger for low achievers), compatible with A's positive overall effect, although C is abstract-only and quasi-experimental.",
+   "key_differences": [
+    "population",
+    "method"
+   ],
+   "condition_diff": {
+    "population": [
+     "Grade 8 students",
+     "Grade 7-9 students"
+    ],
+    "sample_size": [
+     "n=240",
+     "not reported"
+    ],
+    "method": [
+     "Randomized controlled trial",
+     "Quasi-experimental"
+    ],
+    "duration": [
+     "12 weeks",
+     "not reported"
+    ],
+    "outcome_measure": [
+     "End-of-unit mathematics test",
+     "Mathematics test"
+    ]
+   },
+   "claim_a": {
+    "id": 1,
+    "paper_id": "sample-a",
+    "paper_title": "[Sample] AI tutoring in grade 8 mathematics: a 12-week RCT",
+    "access_level": "full",
+    "text": "AI tutoring raised grade 8 math test scores by 25% after 12 weeks.",
+    "conditions": {
+     "population": "Grade 8 students",
+     "sample_size": "n=240",
+     "method": "Randomized controlled trial",
+     "duration": "12 weeks",
+     "outcome_measure": "End-of-unit mathematics test",
+     "significance": "p < 0.01"
+    },
+    "quotes": [
+     {
+      "id": "sample-a:p6_s3",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+     },
+     {
+      "id": "sample-a:p6_s4",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "The effect was consistent across the four participating schools."
+     }
+    ]
+   },
+   "claim_b": {
+    "id": 3,
+    "paper_id": "sample-c",
+    "paper_title": "[Sample] Who benefits? AI tutors and prior achievement",
+    "access_level": "abstract",
+    "text": "AI tutoring gains were larger for students with lower prior achievement.",
+    "conditions": {
+     "population": "Grade 7-9 students",
+     "method": "Quasi-experimental",
+     "outcome_measure": "Mathematics test"
+    },
+    "quotes": [
+     {
+      "id": "sample-c:p1_s4",
+      "paper_id": "sample-c",
+      "page": 1,
+      "section": "abstract",
+      "text": "Gains from AI tutoring were roughly twice as large for students with below-median prior achievement."
+     }
+    ]
+   },
+   "cited": {
+    "a": [
+     {
+      "id": "sample-a:p6_s3",
+      "paper_id": "sample-a",
+      "page": 6,
+      "section": "results",
+      "text": "After 12 weeks, students using the AI tutor scored 25% higher on the end-of-unit mathematics test than the control group (p < 0.01)."
+     }
+    ],
+    "b": [
+     {
+      "id": "sample-c:p1_s4",
+      "paper_id": "sample-c",
+      "page": 1,
+      "section": "abstract",
+      "text": "Gains from AI tutoring were roughly twice as large for students with below-median prior achievement."
+     }
+    ]
+   }
+  }
+ },
+ "discovery": null
+}

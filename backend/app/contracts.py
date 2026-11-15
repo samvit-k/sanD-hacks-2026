@@ -1,0 +1,54 @@
+"""Shared contracts.
+
+1. Gemini response schemas (what the model must return).
+2. The vocabularies used everywhere (labels, impacts, condition fields).
+
+The JSON sent to the frontend (graph, impact summary) is built in graph.py; the
+example files in frontend/public/fixtures/ are generated from that same code.
+"""
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+LABELS = ("supports", "genuine_contradiction", "apparent_contradiction", "not_comparable", "unresolved")
+IMPACTS = ("strengthens", "challenges", "qualifies", "leaves_unresolved")
+# Fields compared deterministically to build condition_diff (descriptive only, never decides a label).
+CONDITION_FIELDS = ("population", "sample_size", "method", "duration", "outcome_measure")
+NOT_REPORTED = "not reported"
+
+Label = Literal["supports", "genuine_contradiction", "apparent_contradiction", "not_comparable", "unresolved"]
+Impact = Literal["strengthens", "challenges", "qualifies", "leaves_unresolved"]
+
+
+class Conditions(BaseModel):
+    population: Optional[str] = Field(None, description="Who was studied; null if not reported")
+    sample_size: Optional[str] = Field(None, description="e.g. 'n=120'; null if not reported")
+    method: Optional[str] = Field(None, description="Study design, e.g. 'randomized controlled trial'")
+    duration: Optional[str] = Field(None, description="Intervention/follow-up length, e.g. '12 weeks'")
+    outcome_measure: Optional[str] = Field(None, description="What was measured, e.g. 'standardized test score'")
+    effect_size: Optional[str] = None
+    significance: Optional[str] = Field(None, description="e.g. 'p<0.01' or 'not significant'")
+    limitations: Optional[str] = Field(None, description="Limitations the authors state")
+
+
+class ExtractedClaim(BaseModel):
+    text: str = Field(description="One testable finding, stated faithfully and concisely")
+    sentence_ids: List[str] = Field(description="Full IDs of the sentences that state this finding")
+    conditions: Conditions
+
+
+class ExtractionResult(BaseModel):
+    claims: List[ExtractedClaim]
+
+
+class PairJudgment(BaseModel):
+    label: Label
+    explanation: str = Field(description="2-3 sentences grounded in the cited sentences")
+    key_differences: List[str] = Field(description="Condition differences that matter for this judgment; may be empty")
+    cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
+
+
+class ImpactJudgment(BaseModel):
+    impact: Impact
+    rationale: str = Field(description="2-3 sentences grounded in the cited sentences")
+    cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
