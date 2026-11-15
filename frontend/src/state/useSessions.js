@@ -12,11 +12,12 @@ import { api, ApiError, NetworkError, TimeoutError } from '../api/client.js'
 //   confirmation step before calling `remove`. Once the server confirms, the deleted project is dropped from local
 //   state immediately — even if the following list refresh fails, nothing keeps pointing at it.
 
-export const STORAGE_KEY = 'researchlens.activeSession'
+export const STORAGE_KEY = 'spidermonkey.activeSession'
+const LEGACY_STORAGE_KEY = 'researchlens.activeSession' // before the rename to SpiderMonkey
 
 function readStored() {
   try {
-    return window.localStorage.getItem(STORAGE_KEY)
+    return window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY)
   } catch {
     return null
   }
@@ -24,6 +25,7 @@ function readStored() {
 
 function store(id) {
   try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     if (id) window.localStorage.setItem(STORAGE_KEY, id)
     else window.localStorage.removeItem(STORAGE_KEY)
   } catch {

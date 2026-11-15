@@ -52,6 +52,14 @@ describe('useSessions', () => {
     expect(stored()).toBe(A)
   })
 
+  it('keeps the project remembered under the old ResearchLens key and moves it to the new key', async () => {
+    window.localStorage.setItem('researchlens.activeSession', B)
+    const { result } = await ready([s(A), s(B)])
+    expect(result.current.activeId).toBe(B)
+    expect(stored()).toBe(B)
+    expect(window.localStorage.getItem('researchlens.activeSession')).toBeNull()
+  })
+
   it('a valid selection switches; an unknown id changes nothing', async () => {
     const { result } = await ready()
     act(() => { expect(result.current.select(B)).toBe(true) })

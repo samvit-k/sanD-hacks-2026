@@ -18,7 +18,7 @@ const LEGEND_MARGIN = 12
 // Cytoscape emits these only for user gestures; programmatic pan()/zoom()/animate()/fit() never do.
 export const USER_VIEWPORT_EVENTS = 'dragpan scrollzoom pinchzoom'
 // Window event the Legend dispatches after it opens/closes, so the graph can refit around it.
-export const LEGEND_EVENT = 'researchlens:legend'
+export const LEGEND_EVENT = 'spidermonkey:legend'
 
 /** Insets ({left, top, right, bottom}) that keep fitted content clear of a bottom-left legend card.
  *  Chooses between reserving a left strip or a bottom strip, whichever leaves the larger area. */

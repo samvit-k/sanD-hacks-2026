@@ -1,6 +1,6 @@
 """PDF -> pages -> sentences with globally unique IDs '{paper_id}:p{page}_s{n}'.
 
-Quotes shown anywhere in ResearchLens are rebuilt from these stored sentences,
+Quotes shown anywhere in SpiderMonkey are rebuilt from these stored sentences,
 so they are verbatim (after whitespace/ligature normalization) by construction.
 
 Short sentences are kept: brief statements ("Gains did not persist.") can be key

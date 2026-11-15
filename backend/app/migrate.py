@@ -19,7 +19,7 @@ Atomicity — ONE transaction, committed only when everything below succeeded:
   Any failure rolls the whole transaction back: the database is exactly as before. Nothing runs after commit.
 
 Required operating sequence for a real database (see `main`):
-  a. stop the ResearchLens backend (no application writes during the migration);
+  a. stop the SpiderMonkey backend (no application writes during the migration);
   b. `python -m app.migrate --backup-dir DIR --dry-run`  → backup + restore check + report, changes nothing;
   c. `python -m app.migrate --backup-dir DIR`            → backup + restore check, then migrate;
   d. start the Stage D backend. Until the migration has run, the Stage D backend refuses research requests

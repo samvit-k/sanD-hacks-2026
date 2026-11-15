@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 BD_BASE = "https://api.brightdata.com/datasets/v3"
 OA_BASE = "https://api.openalex.org"
-HEADERS = {"User-Agent": "ResearchLens/0.1 (hackathon prototype)"}
+HEADERS = {"User-Agent": "SpiderMonkey/0.1 (hackathon prototype)"}
 SAMPLE_PATH = BACKEND / "fixtures" / "brightdata_scholar_sample.json"
 
 # Candidate keys per field, in priority order. Replace with the verified keys from the saved sample.

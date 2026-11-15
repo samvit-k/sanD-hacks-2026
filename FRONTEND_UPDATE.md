@@ -1,4 +1,4 @@
-# ResearchLens — Frontend Update Specification
+# SpiderMonkey — Frontend Update Specification
 
 **Status:** Approved feature direction; implementation pending  
 **Purpose:** Turn the current working research graph into a conversational, multi-session research workspace.  
@@ -6,7 +6,7 @@
 
 ## 1. Context and goals
 
-The current ResearchLens app has a working left research sidebar, top bar, live evidence graph, search, relationship filters, legend, graph controls, and backend integration. Preserve this foundation and the BioOKF-inspired visual language: near-white surfaces, subdued ink, hairline borders, rounded cards, system typography, and restrained blue accents.
+The current SpiderMonkey app has a working left research sidebar, top bar, live evidence graph, search, relationship filters, legend, graph controls, and backend integration. Preserve this foundation and the BioOKF-inspired visual language: near-white surfaces, subdued ink, hairline borders, rounded cards, system typography, and restrained blue accents.
 
 The next iteration should make the graph **less visually crowded**, explain its relationships **on demand**, and let users **upload papers and converse with their own research**. It should also allow users to create, name, reopen, and switch among independent research sessions, similar to the conversation model in ChatGPT.
 

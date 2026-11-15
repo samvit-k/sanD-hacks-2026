@@ -1,4 +1,4 @@
-# ResearchLens API (MVP)
+# SpiderMonkey API (MVP)
 
 Base URL in development: `http://localhost:8000` (Vite proxies `/api` from `:5173`). All bodies are JSON except uploads, which are `multipart/form-data`.
 

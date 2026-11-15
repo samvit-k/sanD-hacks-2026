@@ -27,7 +27,7 @@ SESSION_TABLES = ("workspace", "papers", "sentences", "claims", "relationships",
 AUTO_TITLE = "Untitled research"
 MAX_TITLE_LEN = 120
 
-_session: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("researchlens_session", default=None)
+_session: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("spidermonkey_session", default=None)
 
 
 class DatabaseNotConfigured(RuntimeError):

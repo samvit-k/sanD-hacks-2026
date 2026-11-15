@@ -28,7 +28,7 @@ describe('App data provenance', () => {
       return json(404, null)
     })
     render(<App />)
-    expect(await screen.findByRole('heading', { name: 'Unable to connect to ResearchLens' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Unable to connect to SpiderMonkey' })).toBeTruthy()
     expect(screen.queryByText(/Sample data/)).toBeNull()
     expect(screen.queryByText('No projects yet')).toBeNull()
     expect(spy.mock.calls.some(([url]) => String(url).includes('/fixtures/'))).toBe(false)
@@ -45,7 +45,7 @@ describe('App data provenance', () => {
       return json(404, { detail: 'none' })
     })
     render(<App />)
-    await screen.findByRole('heading', { name: 'Unable to connect to ResearchLens' })
+    await screen.findByRole('heading', { name: 'Unable to connect to SpiderMonkey' })
     up = true
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry connection' })) })
     expect(await screen.findByTestId('session-switcher')).toBeTruthy()
@@ -57,7 +57,7 @@ describe('App data provenance', () => {
       ? json(503, { detail: { code: 'migration_required', message: 'migrate first' } }) : json(404, null)))
     render(<App />)
     expect(await screen.findByRole('heading', { name: /needs a one-time database upgrade/ })).toBeTruthy()
-    expect(screen.queryByText('Unable to connect to ResearchLens')).toBeNull()
+    expect(screen.queryByText('Unable to connect to SpiderMonkey')).toBeNull()
     expect(screen.getByText(/Your research has not been changed/)).toBeTruthy()
   })
 
@@ -72,7 +72,7 @@ describe('App data provenance', () => {
     const banner = await screen.findByText('Demo mode — sample data (fictional)')
     expect(banner.closest('[role="status"]').textContent).toMatch(/Nothing here is real research evidence/)
     fireEvent.click(screen.getByRole('button', { name: 'Exit demo' }))
-    expect(await screen.findByRole('heading', { name: 'Unable to connect to ResearchLens' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Unable to connect to SpiderMonkey' })).toBeTruthy()
   })
 
   it('shows no sample banner for live data', async () => {
@@ -147,7 +147,7 @@ describe('research projects', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.queryByText('Paper from A')).toBeNull()
     expect(screen.getByText('Paper from B')).toBeTruthy()
-    expect(window.localStorage.getItem('researchlens.activeSession')).toBe(B)
+    expect(window.localStorage.getItem('spidermonkey.activeSession')).toBe(B)
   })
 
   it('switching back and forth shows each project\'s own data, and the choice survives a reload', async () => {

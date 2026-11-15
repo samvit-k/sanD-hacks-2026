@@ -83,7 +83,7 @@ export default function WorkspacePanel({
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Research workspace">
       <div className="sb-head">
         <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
-        <span className="sb-brand">ResearchLens</span>
+        <span className="sb-brand">SpiderMonkey</span>
         <button type="button" className="icon-btn" onClick={onToggle} aria-label={collapsed ? 'Expand workspace' : 'Collapse workspace'}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d={collapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M10 3.5 5.5 8 10 12.5'} /></svg>
         </button>

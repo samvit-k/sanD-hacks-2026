@@ -314,14 +314,14 @@ function NoProjects({ onCreate, switcher }) {
       <aside className="sidebar" aria-label="Research workspace">
         <div className="sb-head">
           <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
-          <span className="sb-brand">ResearchLens</span>
+          <span className="sb-brand">SpiderMonkey</span>
         </div>
         <div className="sb-body">{switcher}</div>
       </aside>
       <main className="main">
         <section className="stage" aria-label="Start">
           <div className="onboard-card" role="region" aria-label="Create a research project">
-            <div className="q-kicker">Welcome to ResearchLens</div>
+            <div className="q-kicker">Welcome to SpiderMonkey</div>
             <p>Each research project has its own central question, papers, evidence graph and assistant conversation.</p>
             {error && <div className="warn-card" role="alert">{error}</div>}
             <button type="button" className="btn btn-sm btn-primary" onClick={create} disabled={busy}>
@@ -350,7 +350,7 @@ function ConnectionProblem({ maintenance, error, onRetry, onDemo }) {
       <aside className="sidebar" aria-label="Research workspace">
         <div className="sb-head">
           <img className="brand-mark" src="/logo.svg" alt="" aria-hidden="true" />
-          <span className="sb-brand">ResearchLens</span>
+          <span className="sb-brand">SpiderMonkey</span>
         </div>
       </aside>
       <main className="main">
@@ -359,7 +359,7 @@ function ConnectionProblem({ maintenance, error, onRetry, onDemo }) {
             {maintenance ? (
               <>
                 <div className="q-kicker">Maintenance required</div>
-                <h2>ResearchLens needs a one-time database upgrade</h2>
+                <h2>SpiderMonkey needs a one-time database upgrade</h2>
                 <p>
                   The server is running, but its database still uses the single-project layout. Your research has not been
                   changed. An administrator must stop the backend, run <code>python -m app.migrate --backup-dir &lt;dir&gt;</code>
@@ -369,7 +369,7 @@ function ConnectionProblem({ maintenance, error, onRetry, onDemo }) {
             ) : (
               <>
                 <div className="q-kicker">Connection problem</div>
-                <h2>Unable to connect to ResearchLens</h2>
+                <h2>Unable to connect to SpiderMonkey</h2>
                 <p>
                   The server is not responding. Your projects are stored on the server and are not shown until it can be
                   reached — nothing is substituted for them.

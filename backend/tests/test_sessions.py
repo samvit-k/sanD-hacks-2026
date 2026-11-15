@@ -110,7 +110,7 @@ def _free_port():
 
 
 def test_sessions_survive_a_real_backend_restart(env, pg_url):
-    """Data written by this process is read back by a SEPARATE, freshly started ResearchLens server process
+    """Data written by this process is read back by a SEPARATE, freshly started SpiderMonkey server process
     (uvicorn app.main:app) against the same isolated test database: nothing depends on process memory."""
     build_a()
     assert upload(TEST_SESSION, PAPER_D[0], PAPER_D[1], mode="evaluate").status_code == 200

@@ -1,4 +1,4 @@
--- ResearchLens PER-SESSION schema (Tiger Data: PostgreSQL + pgvector).
+-- SpiderMonkey PER-SESSION schema (Tiger Data: PostgreSQL + pgvector).
 -- Every research session owns one PostgreSQL schema ("rl_<session id>") containing these tables; db.py runs
 -- this file with search_path = rl_<id>, public. Shared objects (vector extension, session registry, discovery
 -- cache) live in schema_public.sql. Idempotent and non-destructive: safe to re-run (never drops data).

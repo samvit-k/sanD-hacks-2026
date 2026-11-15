@@ -127,7 +127,7 @@ WITHHELD = {
     GUARDRAIL_QUOTE: "The assistant’s answer contained a quotation that does not match the stored paper text, "
                      "so it is not shown.",
     GUARDRAIL_INDEPENDENCE: "The assistant’s answer presented related findings as confirmation without acknowledging "
-                            "that the papers share authors (or claimed independent confirmation, which ResearchLens "
+                            "that the papers share authors (or claimed independent confirmation, which SpiderMonkey "
                             "cannot establish), so it is not shown.",
 }
 WITHHELD_HINT = " Try rephrasing, or ask about a specific node or connection."
@@ -277,7 +277,7 @@ def gather_context(conn, llm: LLM, message: str, context: Optional[Dict]) -> Dic
 
 
 # ---------- prompt ----------
-RULES = """You are the ResearchLens research assistant. Answer the user's question using ONLY the evidence below.
+RULES = """You are the SpiderMonkey research assistant. Answer the user's question using ONLY the evidence below.
 Rules:
 - Ground every research statement in the SOURCE SENTENCES and put their full IDs in cited_sentence_ids. Never cite an ID that is not listed below. An answer that makes research statements without citations will be rejected.
 - Refer to papers, claims and relationships ONLY with the tokens shown below, written exactly, e.g. [[claim:3]], [[paper:x-1a2b3c]], [[rel:5]], [[q]]. Never invent tokens or node numbers. Users call items "Node N"; the mapping is shown next to each token.
@@ -459,7 +459,7 @@ def independence_issues(content: str, papers: Set[str], authors: Optional[Author
     for m in INDEPENDENT_RE.finditer(text):
         if not (NEGATED_BEFORE_RE.search(text[:m.start()]) or NEGATED_AFTER_RE.search(text[m.end():])):
             issues.append({"kind": "independence_claimed",
-                           "detail": "The answer describes evidence as independent; ResearchLens cannot establish "
+                           "detail": "The answer describes evidence as independent; SpiderMonkey cannot establish "
                                      "independence between papers."})
             break
     if authors is None or not CONFIRM_RE.search(text) or AUTHOR_MENTION_RE.search(text):
@@ -586,7 +586,7 @@ def _integrity(m: Dict, authors: Optional[AuthorIndex], claim_paper: Dict, rel_c
     return {"headline": REVIEW_HEADLINE,
             "detail": " ".join(_unique([i["detail"] for i in issues])),
             "issues": issues,
-            "note": "Checked by ResearchLens when displayed; the answer text below is unchanged."}
+            "note": "Checked by SpiderMonkey when displayed; the answer text below is unchanged."}
 
 
 # ---------- public API ----------

@@ -141,7 +141,7 @@ def build_impact_prompt(question: str, prior: Dict, new: Dict, diff: Dict, rel: 
     )
 
 
-THEMATIC_NOTE = ("Label set by ResearchLens: Gemini chose “supports” but judged the findings related only "
+THEMATIC_NOTE = ("Label set by SpiderMonkey: Gemini chose “supports” but judged the findings related only "
                  "thematically (they test different hypotheses). Thematic similarity is not support, so the "
                  "relationship is shown as not comparable. Gemini's explanation is kept unchanged.")
 

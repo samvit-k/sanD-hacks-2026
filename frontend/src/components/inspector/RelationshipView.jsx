@@ -47,7 +47,7 @@ export default function RelationshipView({ rel, graph, refs, onNavigate, onAsk }
       <IndependenceNotice independence={rel.independence} />
       {rel.label_note && (
         <div className="warn-card soft" role="note" data-testid="label-note">
-          <b>Label adjusted by ResearchLens.</b> {rel.label_note}
+          <b>Label adjusted by SpiderMonkey.</b> {rel.label_note}
           {rel.model_label && <div className="insp-small">Gemini’s label: {labelOf(rel.model_label)} · comparability: {rel.comparability}</div>}
         </div>
       )}

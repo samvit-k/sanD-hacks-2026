@@ -40,7 +40,7 @@ export function buildStyle() {
     {
       selector: 'node.question',
       style: {
-        // The central question is drawn as the ResearchLens logo (public/logo.svg). Its artwork fills ~72% of the
+        // The central question is drawn as the SpiderMonkey logo (public/logo.svg). Its artwork fills ~72% of the
         // square viewBox, so the image is scaled past the node box; the node keeps its size for layout and clicks.
         'background-color': '#ffffff',
         'background-opacity': 0,

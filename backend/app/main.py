@@ -1,4 +1,4 @@
-"""ResearchLens API. Run from backend/: .venv/bin/uvicorn app.main:app --reload --port 8000
+"""SpiderMonkey API. Run from backend/: .venv/bin/uvicorn app.main:app --reload --port 8000
 
 Sessions (Stage D): every research endpoint requires the header `X-Session-Id: <12 hex>` of an existing
 session. The request then runs inside `db.use_session(id)`, so every query is confined to that session's schema.
@@ -19,7 +19,7 @@ from .llm import get_llm
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = FastAPI(title="ResearchLens", version="0.2")
+app = FastAPI(title="SpiderMonkey", version="0.2")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_methods=["*"], allow_headers=["*"])
 

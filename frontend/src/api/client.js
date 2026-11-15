@@ -1,4 +1,4 @@
-// Thin client for the ResearchLens API (contract: backend/API.md). No retries, no fabricated data.
+// Thin client for the SpiderMonkey API (contract: backend/API.md). No retries, no fabricated data.
 
 export const UPLOAD_TIMEOUT_MS = 180000
 export const CHAT_TIMEOUT_MS = 120000
@@ -23,7 +23,7 @@ export class TimeoutError extends Error {
 
 export class NetworkError extends Error {
   constructor(cause) {
-    super('Cannot reach the ResearchLens server')
+    super('Cannot reach the SpiderMonkey server')
     this.name = 'NetworkError'
     this.cause = cause
   }

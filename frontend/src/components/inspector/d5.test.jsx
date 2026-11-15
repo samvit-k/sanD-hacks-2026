@@ -68,7 +68,7 @@ describe('relationship independence', () => {
     expect(document.querySelector('.rel-pill').textContent).toMatch(/^Supports/) // the original label is still shown
   })
 
-  it('explains a label ResearchLens adjusted from Gemini’s own structured answer', () => {
+  it('explains a label SpiderMonkey adjusted from Gemini’s own structured answer', () => {
     render(<RelationshipView rel={rel({ label: 'not_comparable', model_label: 'supports', comparability: 'thematic_only',
       label_note: 'Thematic similarity is not support.', independence: null })} graph={graph} refs={refs} onNavigate={() => {}} />)
     const note = screen.getByTestId('label-note')
@@ -94,7 +94,7 @@ describe('chat answers re-checked for independence', () => {
     const message = { id: 2, role: 'assistant', content: 'The MIND study confirms this finding.', cited: [], references: {},
       insufficient_evidence: false, guardrail: null,
       integrity: { headline: 'Independence not established — review needed', detail: SHARED.summary,
-        note: 'Checked by ResearchLens when displayed; the answer text below is unchanged.' } }
+        note: 'Checked by SpiderMonkey when displayed; the answer text below is unchanged.' } }
     render(<ChatMessage message={message} />)
     const banner = screen.getByTestId('chat-integrity')
     expect(banner.textContent).toMatch(/review needed/)

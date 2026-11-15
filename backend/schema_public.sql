@@ -1,4 +1,4 @@
--- ResearchLens SHARED objects (public schema). Research data never lives here: each session's papers,
+-- SpiderMonkey SHARED objects (public schema). Research data never lives here: each session's papers,
 -- sentences, claims, relationships, impacts, node numbers and chat are in its own schema (schema.sql).
 -- Idempotent and non-destructive.
 CREATE EXTENSION IF NOT EXISTS vector SCHEMA public;
