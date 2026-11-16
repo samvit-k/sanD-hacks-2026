@@ -207,12 +207,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round
 .pop-sep { height: 1px; background: var(--hair-2); margin: 8px 4px; }
 .filter-panel .link-btn { margin: 8px 6px 0; font-size: 13.5px; }
 
-.services {
-  display: inline-flex; gap: 5px; align-items: center; height: 38px; padding: 0 10px;
-  border: 1px solid var(--hair); border-radius: var(--r-md); cursor: help;
-}
-.svc-dot { width: 7px; height: 7px; border-radius: 50%; background: #d4d4d8; }
-.svc-dot.on { background: var(--ok); }
+.btn-icon { padding: 0; width: 38px; justify-content: center; }
+
+/* about popover (opened from the contact button) */
+.about-panel { top: 46px; right: 0; width: min(360px, 86vw); padding: 12px 12px 14px; }
+.about-head { display: flex; align-items: center; gap: 8px; margin: 0 6px 4px; }
+.about-head img { width: 22px; height: 22px; }
+.about-head .pop-title { margin: 0; }
+.about-person { padding: 8px 6px; border-radius: var(--r-sm); }
+.about-person + .about-person { border-top: 1px solid var(--hair-2); }
+.about-name { font-size: 15px; font-weight: 600; color: var(--text); text-decoration: none; }
+.about-name:hover { color: var(--accent-ink); text-decoration: underline; }
+.about-person p { margin: 4px 0 6px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.about-email { font-size: 13px; color: var(--accent-ink); text-decoration: none; }
+.about-email:hover { text-decoration: underline; }
 
 /* banners */
 .banner {
@@ -498,7 +506,6 @@ button.node-chip:hover { background: var(--hover); color: var(--text); }
 /* Medium widths: tighten the top bar (sidebar auto-collapses in App.jsx below 1100px). */
 @media (max-width: 1100px) {
   .search input { width: 210px; }
-  .services { display: none; }
   .tb-meta { display: none; }
 }
 /* Narrow widths: compact controls so nothing overflows. */

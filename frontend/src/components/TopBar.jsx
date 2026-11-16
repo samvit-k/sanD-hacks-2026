@@ -1,3 +1,4 @@
+import AboutPopover from './AboutPopover.jsx'
 import FilterPopover from './FilterPopover.jsx'
 import SearchBox from './SearchBox.jsx'
 
@@ -26,17 +27,6 @@ function ChecksPill({ checks, source }) {
   return <span className="pill" title={CHECKS_HELP}><b className="good">✓</b> Citation Integrity Passed</span>
 }
 
-function ServiceDots({ health }) {
-  if (!health) return null
-  const items = [['Gemini', health.gemini], ['Database', health.database], ['Bright Data', health.brightdata]]
-  const title = items.map(([name, on]) => `${name}: ${on ? 'configured' : 'not configured'}`).join('\n')
-  return (
-    <span className="services" title={title} aria-label={title.replace(/\n/g, ', ')}>
-      {items.map(([name, on]) => <span key={name} className={`svc-dot ${on ? 'on' : ''}`} />)}
-    </span>
-  )
-}
-
 export default function TopBar({
   graph, workspace, checks, health, source, query, onQuery, onPick, filters, onFilters, assistantOpen, onToggleAssistant,
   projectTitle = null,
@@ -57,7 +47,6 @@ export default function TopBar({
         <ChecksPill checks={checks} source={source} />
         <SearchBox graph={graph} query={query} onQuery={onQuery} onPick={onPick} />
         <FilterPopover graph={graph} filters={filters} onChange={onFilters} />
-        <ServiceDots health={health} />
         {onToggleAssistant && (
           <button type="button" className={`btn ${assistantOpen ? 'btn-on' : ''}`} onClick={onToggleAssistant}
             aria-pressed={!!assistantOpen} aria-controls="assistant-panel" title="Research assistant and PDF uploads">
@@ -65,6 +54,7 @@ export default function TopBar({
             Assistant
           </button>
         )}
+        <AboutPopover />
       </div>
     </header>
   )

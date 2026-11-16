@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import TopBar, { checksStatus } from './TopBar.jsx'
 
@@ -63,3 +63,22 @@ describe('TopBar heading', () => {
   })
 })
 
+describe('About Us popover', () => {
+  const props = { graph: null, workspace: null, query: '', onQuery: () => {}, onPick: () => {}, source: 'live',
+    filters: { labels: {}, insufficient: true, structural: true, discovery: true, onlyNew: false }, onFilters: () => {} }
+  it('opens from the contact button with each name linking to an email', () => {
+    render(<TopBar {...props} health={{ gemini: true, database: true, brightdata: false }} onToggleAssistant={() => {}} />)
+    const buttons = [...document.querySelectorAll('.tb-actions button')].map((b) => b.textContent.trim() || b.getAttribute('aria-label'))
+    expect(buttons.slice(-2)).toEqual(['Assistant', 'About us'])
+    expect(screen.queryByTestId('about')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'About us' }))
+    const about = screen.getByTestId('about')
+    expect(about.textContent).toMatch(/About Us/)
+    expect(screen.getByText('Dhruv Madan').getAttribute('href')).toBe('mailto:dhruvmadan14@gmail.com')
+    expect(screen.getByText('Samvit Kundapur').getAttribute('href')).toBe('mailto:skundapur@ucsd.edu')
+    expect(screen.getByText('Aakarsh Jha').getAttribute('href')).toBe('mailto:aakarsh.jha08@gmail.com')
+    expect(about.textContent).not.toMatch(/Services|Gemini|Bright Data/)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId('about')).toBeNull()
+  })
+})
