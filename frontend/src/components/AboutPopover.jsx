@@ -32,9 +32,11 @@ export default function AboutPopover() {
   return (
     <div className="filter about">
       <button type="button" className={`btn btn-icon ${open ? 'btn-on' : ''}`} onClick={() => setOpen((v) => !v)}
-        aria-expanded={open} aria-haspopup="dialog" aria-label="About us" title="About Us · Contact">
+        aria-expanded={open} aria-haspopup="dialog" aria-label="About us" title="About Us">
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M5.2 2.5 3.6 2.6c-.7.1-1.2.7-1.1 1.4.5 5 4.5 9 9.5 9.5.7.1 1.3-.4 1.4-1.1l.1-1.6c0-.4-.2-.7-.6-.9l-2-.9c-.3-.1-.7 0-.9.2l-.8 1c-1.6-.8-2.9-2.1-3.7-3.7l1-.8c.2-.2.3-.6.2-.9l-.9-2c-.2-.4-.5-.6-.9-.6z" />
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 7.2v3.6" />
+          <circle cx="8" cy="5.2" r="0.45" fill="currentColor" />
         </svg>
       </button>
       {open && (
