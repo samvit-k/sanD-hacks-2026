@@ -34,7 +34,6 @@ from app.llm import LLM, get_llm
 
 MANIFEST = ROOT / "data" / "papers" / "manifest.json"
 
-
 def resolve_question(question: Optional[str], reset: bool, out=print) -> str:
     """Apply --question / manifest question with the same protection as PUT /api/workspace."""
     if reset:
@@ -54,7 +53,6 @@ def resolve_question(question: Optional[str], reset: bool, out=print) -> str:
     except pipeline.NoQuestionError:
         raise SystemExit("No research question: pass --question, add \"question\" to the manifest, "
                          "or set it in the app.")
-
 
 def seed(llm: LLM, manifest_path: Path = MANIFEST, reset: bool = False, refresh: bool = False,
          reextract: Iterable[str] = (), out=print, question: Optional[str] = None) -> dict:
@@ -102,7 +100,6 @@ def seed(llm: LLM, manifest_path: Path = MANIFEST, reset: bool = False, refresh:
     stats["violations"] = check(out)
     return stats
 
-
 def evaluate_new(llm: LLM, path: str, title: Optional[str], out=print) -> dict:
     """Evaluate a new paper; returns integrity violations ({} when clean)."""
     # An explicit operator command: re-running it intentionally recomputes this paper's analysis.
@@ -114,13 +111,11 @@ def evaluate_new(llm: LLM, path: str, title: Optional[str], out=print) -> dict:
         out(f"- {i['impact'].upper()}{flag}: {i['prior_claim']['text'][:90]}")
     return check(out)
 
-
 def check(out=print) -> dict:
     with db.connect() as conn:
         bad = {k: ids for k, ids in db.integrity_violations(conn).items() if ids}
     out("integrity checks: OK" if not bad else f"integrity checks FAILED: {bad}")
     return bad
-
 
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.WARNING)
@@ -163,7 +158,6 @@ def main(argv=None) -> int:
     with db.use_session(sid):
         return _run(args)
 
-
 def _run(args) -> int:
     if args.reset and not args.yes:
         print("--reset deletes ALL papers, claims, relationships, impacts and uploaded papers. "
@@ -174,7 +168,6 @@ def _run(args) -> int:
     stats = seed(get_llm(), Path(args.manifest), reset=args.reset, refresh=args.refresh, reextract=args.reextract,
                  question=args.question)
     return 1 if stats["violations"] else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

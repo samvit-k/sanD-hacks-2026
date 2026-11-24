@@ -12,7 +12,6 @@ _LINE = re.compile(r"^\[([a-z0-9-]+:p\d+_s\d+)\] \((\w+)\) (.*)$")
 _ID = re.compile(r"\[([a-z0-9-]+:p\d+_s\d+)\]")
 _STOP = {"the", "a", "an", "of", "and", "in", "on", "for", "with", "to", "was", "were", "is", "after", "than", "by"}
 
-
 class FakeLLM:
     model_name = "fake"
 

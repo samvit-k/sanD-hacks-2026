@@ -9,7 +9,6 @@ from .authors import AuthorIndex, independence_flag
 from .contracts import IMPACTS
 from .ingest import layout_artifacts
 
-
 def quote(sid: str, s: Dict) -> Dict:
     """A stored sentence as shown to users. `text` is the stored source text (never edited); `kind`/`text_check`
     say how it was extracted (NULL before D5); `artifacts` are display-only layout warnings."""
@@ -17,14 +16,11 @@ def quote(sid: str, s: Dict) -> Dict:
             "text": s["text"], "kind": s.get("block_kind"), "text_check": s.get("text_check"),
             "artifacts": layout_artifacts(s["text"])}
 
-
 def _quotes(ids: List[str], sentences: Dict[str, Dict]) -> List[Dict]:
     return [quote(sid, sentences[sid]) for sid in ids if sid in sentences]
 
-
 def _short(text: str, n: int = 70) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
-
 
 def paper_detail(p: Dict, authors: Optional[AuthorIndex] = None) -> Dict:
     out = {"id": p["id"], "title": p["title"], "doi": p.get("doi"), "url": p.get("url"), "year": p.get("year"),
@@ -36,14 +32,12 @@ def paper_detail(p: Dict, authors: Optional[AuthorIndex] = None) -> Dict:
         out["authors"] = authors.lists.get(p["id"])
     return out
 
-
 def _reviews_for(reviews: Optional[List[Dict]], kind: str, target_id: int) -> List[Dict]:
     out = []
     for r in reviews or []:
         if r["target_kind"] == kind and r["target_id"] == target_id:
             out.append({k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in r.items()})
     return out
-
 
 def independence(label: str, pa: str, pb: str, authors: Optional[AuthorIndex], insufficient: bool) -> Optional[Dict]:
     """Dependence between the two papers behind a relationship/impact, and how prominently to qualify the label."""
@@ -52,14 +46,12 @@ def independence(label: str, pa: str, pb: str, authors: Optional[AuthorIndex], i
     pair = authors.pair(pa, pb)
     return {**pair, **independence_flag(label, pair, insufficient)}
 
-
 def claim_detail(c: Dict, papers: Dict[str, Dict], sentences: Dict[str, Dict]) -> Dict:
     p = papers.get(c["paper_id"], {})
     return {"id": c["id"], "paper_id": c["paper_id"], "paper_title": p.get("title", c.get("paper_title")),
             "access_level": p.get("access_level", c.get("access_level", "full")),
             "text": c["text"], "conditions": c.get("conditions") or {},
             "quotes": _quotes(c["sentence_ids"], sentences)}
-
 
 def relationship_detail(r: Dict, claims: Dict[int, Dict], papers: Dict, sentences: Dict,
                         authors: Optional[AuthorIndex] = None, reviews: Optional[List[Dict]] = None) -> Dict:
@@ -78,7 +70,6 @@ def relationship_detail(r: Dict, claims: Dict[int, Dict], papers: Dict, sentence
             "cited": {"a": [q for q in cited if q["paper_id"] == a["paper_id"]],
                       "b": [q for q in cited if q["paper_id"] == b["paper_id"]]}}
 
-
 def ref_order(papers: List[Dict], claims: List[Dict]) -> List[str]:
     """Order in which not-yet-numbered nodes receive display numbers: papers by insertion time,
     each followed by its claims (by id). Only nodes without a number are affected, so this order
@@ -91,7 +82,6 @@ def ref_order(papers: List[Dict], claims: List[Dict]) -> List[str]:
         out.append(f"paper:{p['id']}")
         out.extend(f"claim:{c['id']}" for c in by_paper.get(p["id"], []))
     return out
-
 
 def build_graph(question: str, papers: List[Dict], claims: List[Dict], relationships: List[Dict],
                 sentences: Dict[str, Dict], discovery: Optional[Dict] = None, source: str = "live",
@@ -148,7 +138,6 @@ def build_graph(question: str, papers: List[Dict], claims: List[Dict], relations
         "relationships": details,
         "discovery": disc_payload,
     }
-
 
 def build_impact_summary(new_paper: Dict, claims: List[Dict], impacts: List[Dict], sentences: Dict[str, Dict],
                          papers: List[Dict], extraction: Optional[Dict] = None, status: str = "live",

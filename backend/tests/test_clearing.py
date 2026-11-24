@@ -8,27 +8,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, main, pipeline
-from app import llm as llm_mod
-from app.config import settings
 from app.contracts import ChatAnswer
 
 from .conftest import SESSION_HEADERS, TEST_SESSION
-from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, PAPERS, pdf, seed
 from .test_sessions import B_PAPER, Q_B, fingerprint, new_session, upload
 
-
 @pytest.fixture
-def env(clean_db, monkeypatch):
-    monkeypatch.setattr(settings, "sim_threshold", 0.2)
-    pipeline._question_vecs.clear()
-    fake = FakeLLM()
-    llm_mod.set_llm(fake)
-    seed(fake)
+def env(fake_llm):
+    seed(fake_llm)
     pipeline.graph_payload()  # assigns node numbers, as the UI would
-    yield TestClient(main.app, headers=SESSION_HEADERS), fake
-    llm_mod.set_llm(None)
-
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake_llm
 
 def counts():
     with db.connect() as conn:
@@ -36,13 +26,11 @@ def counts():
                 for t in ("papers", "sentences", "claims", "relationships", "impacts", "chat_messages",
                           "relationship_reviews")}
 
-
 def cited_paper(c):
     """Ask once; return the paper id whose sentence the (fake) answer cited."""
     bot = c.post("/api/chat", json={"message": "Do AI tutors raise test scores?"}).json()["assistant"]
     with db.connect() as conn:
         return db.sentences_by_ids(conn, [bot["cited"][0]["id"]])[bot["cited"][0]["id"]]["paper_id"]
-
 
 # ---------- confirmation ----------
 @pytest.mark.parametrize("path", ["/api/chat/messages", "/api/papers", "/api/papers/paper-a"])
@@ -55,12 +43,10 @@ def test_every_clear_needs_explicit_confirmation(env, path):
         assert r.status_code == 409 and r.json()["detail"]["code"] == "confirmation_required"
     assert counts() == before
 
-
 def test_clear_requires_a_valid_session(env):
     assert TestClient(main.app).delete("/api/papers", params={"confirm": "true"}).status_code == 400
     r = TestClient(main.app, headers={"X-Session-Id": "aaaaaaaaaaaa"}).delete("/api/papers", params={"confirm": "true"})
     assert r.status_code == 404
-
 
 # ---------- clear chat ----------
 def test_clear_chat_deletes_only_the_conversation(env):
@@ -76,7 +62,6 @@ def test_clear_chat_deletes_only_the_conversation(env):
         {k: v for k, v in before.items() if k != "chat_messages"}
     # The conversation continues normally afterwards.
     assert c.post("/api/chat", json={"message": "Do tutors help?"}).status_code == 200
-
 
 # ---------- clear all papers ----------
 def test_clear_papers_deletes_papers_analysis_and_chat_but_keeps_the_question(env):
@@ -98,7 +83,6 @@ def test_clear_papers_deletes_papers_analysis_and_chat_but_keeps_the_question(en
     assert c.post("/api/papers", files={"file": ("a.pdf", pdf(text), "application/pdf")},
                   data={"title": title, "mode": "library"}).status_code == 200
 
-
 def test_clearing_one_project_never_touches_another(env):
     c, _ = env
     c.post("/api/chat", json={"message": "Do tutors help?"})
@@ -114,7 +98,6 @@ def test_clearing_one_project_never_touches_another(env):
     assert fingerprint(sid_b) == b_before
     # And the reverse: B's paper id is not removable through A.
     assert c.delete(f"/api/papers/{b_before['papers'][0]}", params={"confirm": "true"}).status_code == 404
-
 
 # ---------- remove one paper ----------
 def test_remove_paper_cascades_and_removes_its_reviews(env):
@@ -148,7 +131,6 @@ def test_remove_paper_cascades_and_removes_its_reviews(env):
     now = {n["data"]["id"]: n["data"].get("ref") for n in g["nodes"]}
     assert all(now[k] == v for k, v in keep.items() if k in now)
 
-
 def test_removing_an_already_removed_paper_returns_404_and_changes_nothing(env):
     c, _ = env
     assert c.delete("/api/papers/paper-a", params={"confirm": "true"}).status_code == 200
@@ -156,7 +138,6 @@ def test_removing_an_already_removed_paper_returns_404_and_changes_nothing(env):
     r = c.delete("/api/papers/paper-a", params={"confirm": "true"})
     assert r.status_code == 404
     assert counts() == before
-
 
 def test_removing_the_evaluated_paper_clears_its_impact(env):
     c, fake = env
@@ -168,7 +149,6 @@ def test_removing_the_evaluated_paper_clears_its_impact(env):
     assert c.delete(f"/api/papers/{pid}", params={"confirm": "true"}).json()["was_evaluated"] is True
     assert counts()["impacts"] == 0
     assert c.get("/api/impact/latest").status_code == 404
-
 
 def test_removed_evidence_is_flagged_in_chat_and_never_sent_to_the_model(env):
     c, fake = env
@@ -204,7 +184,6 @@ def test_removed_evidence_is_flagged_in_chat_and_never_sent_to_the_model(env):
     bot = c.get("/api/chat/messages").json()["messages"][-1]
     assert bot["cited"] and all(q["paper_title"] != PAPERS[pid][0] for q in bot["cited"])
 
-
 def test_removed_evidence_records_are_not_duplicated(env):
     c, _ = env
     cited_paper(c)
@@ -220,7 +199,6 @@ def test_removed_evidence_records_are_not_duplicated(env):
         assert m["evidence_removed"] is True
         assert m["removed_evidence"] == [{"paper_id": "paper-a", "title": "A"}, {"paper_id": "paper-b", "title": "B"}]
 
-
 def test_turn_asked_about_a_removed_paper_is_flagged_as_a_whole():
     rows = [{"id": 1, "role": "user", "content": "About this", "context": {"kind": "paper", "id": "x"}},
             {"id": 2, "role": "assistant", "content": "Answer", "cited_sentence_ids": ["y:p1_s1"]},
@@ -232,7 +210,6 @@ def test_turn_asked_about_a_removed_paper_is_flagged_as_a_whole():
             {"id": 8, "role": "assistant", "content": "Nothing", "cited_sentence_ids": ["z:p1_s1"]}]
     fp = {"sentences": ["x:p1_s1"], "claims": [7], "relationships": [9]}
     assert pipeline.turns_touching(rows, fp, "x") == [1, 2, 3, 4, 5, 6]
-
 
 # ---------- concurrency: in-flight work never restores deleted content ----------
 def test_paper_clears_are_refused_while_an_upload_is_being_analyzed(env, monkeypatch):
@@ -255,7 +232,6 @@ def test_paper_clears_are_refused_while_an_upload_is_being_analyzed(env, monkeyp
     assert seen["chat"].status_code == 200  # the chat is independent of an upload
     assert counts()["papers"] == len(PAPERS) + 1
 
-
 def test_upload_that_has_not_stored_its_paper_yet_is_discarded_after_a_clear(env, monkeypatch):
     """Window between the upload's checks and storing the paper (no 'processing' row yet)."""
     c, _ = env
@@ -271,7 +247,6 @@ def test_upload_that_has_not_stored_its_paper_yet_is_discarded_after_a_clear(env
                data={"mode": "library", "title": "Late"})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "data_changed"
     assert counts()["papers"] == 0 and counts()["sentences"] == 0
-
 
 def test_late_chat_answer_after_clear_chat_is_not_saved(env, monkeypatch):
     c, fake = env
@@ -290,7 +265,6 @@ def test_late_chat_answer_after_clear_chat_is_not_saved(env, monkeypatch):
                                                            "code": "data_changed", "cleared": "chat"}
     assert c.get("/api/chat/messages").json()["messages"] == []
 
-
 def test_late_chat_answer_after_a_paper_is_removed_is_not_saved(env, monkeypatch):
     c, fake = env
     real = fake.generate_json
@@ -306,7 +280,6 @@ def test_late_chat_answer_after_a_paper_is_removed_is_not_saved(env, monkeypatch
     r = c.post("/api/chat", json={"message": "Do tutors help?"})
     assert r.status_code == 409 and r.json()["detail"]["cleared"] == "papers"
     assert counts()["chat_messages"] == 0
-
 
 def test_reanalysis_after_a_clear_writes_nothing(env, monkeypatch):
     c, fake = env
@@ -326,7 +299,6 @@ def test_reanalysis_after_a_clear_writes_nothing(env, monkeypatch):
     assert r.status_code == 409 and r.json()["detail"]["code"] == "data_changed"
     assert all(v == 0 for v in counts().values())
 
-
 def test_question_reset_discards_in_flight_answers(env, monkeypatch):
     c, fake = env
     real = fake.generate_json
@@ -340,7 +312,6 @@ def test_question_reset_discards_in_flight_answers(env, monkeypatch):
     monkeypatch.setattr(fake, "generate_json", reset_during_answer)
     assert c.post("/api/chat", json={"message": "Do tutors help?"}).status_code == 409
     assert counts()["chat_messages"] == 0
-
 
 def test_a_clear_waits_for_an_in_flight_write_and_then_removes_it(env):
     """Row-lock ordering across connections (another tab / process): a guarded write that already holds the
@@ -367,7 +338,6 @@ def test_a_clear_waits_for_an_in_flight_write_and_then_removes_it(env):
                 db.insert_chat_message(conn, {"session_id": TEST_SESSION, "role": "user", "content": "too late",
                                               "question": "q"})
     assert counts()["chat_messages"] == 0
-
 
 def test_existing_projects_gain_the_new_tables_on_first_use(env):
     """Projects created before this feature (no data_epochs / flag columns) are upgraded additively."""

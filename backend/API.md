@@ -232,10 +232,10 @@ Cytoscape elements plus every detail the inspectors need (no second request need
 
 ## Research assistant (Stage B)
 
-All chat calls are scoped by `session_id` (default `"default"`; pattern `[a-z0-9][a-z0-9-]{0,39}`) so separate
-research sessions can be added without changing this contract.
+Like every research endpoint, chat calls are scoped by the `X-Session-Id` header (the project's own schema). An
+optional `session_id` in the query or body is only an echo: it must equal the header, otherwise 422.
 
-### `GET /api/chat/messages?session_id=default`
+### `GET /api/chat/messages`
 Each message carries `question`: the central question in force when it was written. Turns from an earlier question are
 shown as such and are not sent to the model.
 

@@ -15,12 +15,10 @@ from app.config import ROOT  # noqa: E402
 
 OUT = ROOT / "frontend" / "public" / "fixtures"
 
-
 def write(name: str, data: dict) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(json.dumps(data, indent=1, default=str))
     print(f"wrote {OUT / name}")
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -29,7 +27,6 @@ def main() -> None:
     args = ap.parse_args()
     with db.use_session(db.get_session(args.session)["id"]):
         _snapshot(args)
-
 
 def _snapshot(args) -> None:
     with db.connect() as conn:
@@ -47,7 +44,6 @@ def _snapshot(args) -> None:
     graph["meta"]["source"] = "snapshot"
     write("graph_with_new.json", graph)
     write("paper_d_result.json", pipeline.impact_summary(latest["id"], status="precomputed"))
-
 
 if __name__ == "__main__":
     main()

@@ -3,14 +3,13 @@
 // has papers, by an explicit choice about what happens to the existing analysis).
 import { useEffect, useRef, useState } from 'react'
 import { MAX_QUESTION_LEN, ORIGIN, useQuestionComposer } from '../../state/useQuestionComposer.js'
+import { plural } from '../../text.js'
 
 const ORIGIN_LABEL = {
   [ORIGIN.gemini]: 'Suggested by Gemini — review before confirming',
   [ORIGIN.edited]: 'Gemini suggestion, edited by you',
   [ORIGIN.manual]: 'Written by you',
 }
-
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function ConflictPanel({ composer, onCancel }) {
   const { conflict, confirming } = composer

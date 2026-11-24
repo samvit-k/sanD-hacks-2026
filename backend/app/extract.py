@@ -44,7 +44,6 @@ MAX_NOTE_LEN = 400
 
 _NUM_TOKEN = re.compile(r"^[\d.,%±+\-*()]+$")
 
-
 def looks_like_table(text: str) -> bool:
     """Flattened table rows: long, and mostly numeric tokens (e.g. 'LibFM 0.5661 0.2414 0.2689 ...')."""
     tokens = text.split()
@@ -52,7 +51,6 @@ def looks_like_table(text: str) -> bool:
         return False
     numeric = sum(1 for t in tokens if _NUM_TOKEN.match(t))
     return numeric / len(tokens) >= 0.4
-
 
 def select_prompt_sentences(sentences: List[Dict], limit: int) -> List[Dict]:
     """All sentences if within `limit`; otherwise priority sections first, then the rest
@@ -65,7 +63,6 @@ def select_prompt_sentences(sentences: List[Dict], limit: int) -> List[Dict]:
     chosen = (priority + rest)[:limit]
     return sorted(chosen, key=lambda s: order[s["id"]])
 
-
 def _prompt_tag(s: Dict) -> str:
     kind = s.get("block_kind")
     if kind == "table" or looks_like_table(s["text"]):
@@ -73,7 +70,6 @@ def _prompt_tag(s: Dict) -> str:
     if kind in ("caption", "footnote"):
         return kind
     return s.get("section", "front")
-
 
 def build_extraction_prompt(question: str, title: str, sentences: List[Dict], max_claims: int, limit: int) -> str:
     chosen = select_prompt_sentences(sentences, limit)
@@ -89,7 +85,6 @@ def build_extraction_prompt(question: str, title: str, sentences: List[Dict], ma
         max_claims=max_claims,
         example_id=chosen[0]["id"] if chosen else "paper:p1_s1",
     )
-
 
 def validate_claims(
     raw: ExtractionResult, paper_id: str, stored_paper: Dict[str, str], max_claims: int

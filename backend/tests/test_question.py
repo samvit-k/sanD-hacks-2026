@@ -16,11 +16,9 @@ INTEREST = "I'm interested in how AI tutoring affects student learning outcomes.
 NEW_Q = "How does AI-assisted tutoring influence student learning outcomes compared with traditional instruction?"
 EXTRACT = "You are extracting testable"
 
-
 def stored_question():
     with db.connect() as conn:
         return db.get_question(conn)
-
 
 def snapshot():
     """Papers, sentence text, node numbers and chat rows: what keep_papers must never destroy."""
@@ -31,7 +29,6 @@ def snapshot():
         msgs = conn.execute("SELECT count(*) AS n FROM chat_messages").fetchone()["n"]
     return papers, sentences, refs, msgs
 
-
 def full_project(c):
     """Library + one evaluated paper + node numbers + one chat exchange."""
     build_library(c)
@@ -41,22 +38,18 @@ def full_project(c):
     n = counts()
     assert n["papers"] and n["claims"] and n["relationships"] and n["impacts"]
 
-
 def propose(q, rationale="Names the intervention, outcome and comparison.", interest=INTEREST, previous=()):
     return questions.validate_proposal(QuestionProposal(question=q, rationale=rationale), previous, interest)
-
 
 # ---------- unit: proposal rules (no database, no Gemini) ----------
 def test_validate_proposal_interest_is_optional_for_existing_callers():
     assert propose(NEW_Q, interest="")["question"] == NEW_Q  # positional (raw, previous) still works
     assert questions.validate_proposal(QuestionProposal(question=NEW_Q, rationale="r"))["question"] == NEW_Q
 
-
 def test_proposal_prompt_keeps_interest_as_delimited_data_and_forbids_findings():
     p = questions.build_proposal_prompt(INTEREST, ["Earlier suggestion?"])
     assert f"<<<\n{INTEREST}\n>>>" in p and "Earlier suggestion?" in p
     assert "do not state, summarize or imply any finding" in p and "Do not narrow the scope" in p
-
 
 @pytest.mark.parametrize("bad", [
     "Studies show AI tutoring improves learning outcomes, but how much does it help students?",
@@ -69,7 +62,6 @@ def test_rejects_findings_statistics_citations_statements_and_vague_questions(ba
     with pytest.raises(questions.ProposalRejectedError):
         propose(bad)
 
-
 @pytest.mark.parametrize("ok", [
     NEW_Q,
     "Is AI tutoring associated with different student learning outcomes than human tutoring?",
@@ -78,7 +70,6 @@ def test_rejects_findings_statistics_citations_statements_and_vague_questions(ba
 ])
 def test_accepts_comparisons_and_reworded_questions(ok):
     assert propose(ok)["question"] == ok
-
 
 @pytest.mark.parametrize("narrowed, term", [
     ("How does AI tutoring influence learning outcomes of high school students?", "high school"),
@@ -95,7 +86,6 @@ def test_rejects_restrictions_gemini_invented(narrowed, term):
         propose(narrowed)
     assert term in str(exc.value)
 
-
 def test_allows_dates_populations_and_places_the_user_supplied():
     interest = "AI tutoring for high school students in Kenya since 2020, ages 14-18 in rural schools"
     q = ("How has AI tutoring influenced learning outcomes of rural high school students aged 14-18 in Kenya "
@@ -103,18 +93,15 @@ def test_allows_dates_populations_and_places_the_user_supplied():
     assert propose(q, interest=interest)["question"] == q
     assert questions.unsupported_restrictions(q, interest) == []
 
-
 def test_restriction_check_does_not_claim_semantic_completeness():
     # Subtle narrowing that no pattern can recognise is left to the researcher's review (documented).
     doc = inspect.getsource(questions)
     assert "NOT a semantic check" in doc
     assert propose("How does AI tutoring influence student learning outcomes in mathematics?")  # not detected
 
-
 def test_rationale_with_invented_evidence_is_dropped_not_shown():
     out = propose(NEW_Q, rationale="Research shows tutoring raises scores by 20%.")
     assert out["question"] == NEW_Q and out["rationale"] is None
-
 
 # ---------- POST /api/question/propose ----------
 def test_propose_returns_a_question_and_writes_nothing(api):
@@ -128,7 +115,6 @@ def test_propose_returns_a_question_and_writes_nothing(api):
     assert fake.temperatures[-1] == questions.PROPOSAL_TEMPERATURE
     assert stored_question() == DEFAULT_TEST_QUESTION and c.get("/api/workspace").json() == before  # never auto-finalized
 
-
 def test_regenerate_sends_previous_suggestions_and_gets_a_different_one(api):
     c, fake = api
     first = c.post("/api/question/propose", json={"interest": INTEREST}).json()["proposal"]["question"]
@@ -136,7 +122,6 @@ def test_regenerate_sends_previous_suggestions_and_gets_a_different_one(api):
     assert second["proposal"]["question"] != first
     assert "Already suggested" in fake.prompts[-1] and first in fake.prompts[-1]
     assert stored_question() == DEFAULT_TEST_QUESTION
-
 
 def test_rule_breaking_suggestion_is_retried_once_then_reported(api):
     c, fake = api
@@ -153,7 +138,6 @@ def test_rule_breaking_suggestion_is_retried_once_then_reported(api):
     assert len(fake.prompts) - calls == questions.MAX_ATTEMPTS  # bounded paid calls
     assert stored_question() == DEFAULT_TEST_QUESTION
 
-
 def test_gemini_failure_is_a_clear_error_and_nothing_is_saved(api):
     c, fake = api
     fake.fail_proposal = True
@@ -162,12 +146,10 @@ def test_gemini_failure_is_a_clear_error_and_nothing_is_saved(api):
     assert "write the question yourself" in r.json()["detail"]["message"]
     assert stored_question() == DEFAULT_TEST_QUESTION
 
-
 def test_propose_validates_the_interest(api):
     c, _ = api
     assert c.post("/api/question/propose", json={"interest": "  ai "}).status_code == 422
     assert c.post("/api/question/propose", json={"interest": "x " * 600}).status_code == 422
-
 
 # ---------- confirmation: only PUT /api/workspace changes the question ----------
 def test_confirming_an_edited_or_manual_question_saves_exactly_that_text(api):
@@ -182,7 +164,6 @@ def test_confirming_an_edited_or_manual_question_saves_exactly_that_text(api):
     calls = len(fake.prompts)
     assert c.put("/api/workspace", json={"question": USER_Q}).status_code == 200  # manual entry: no Gemini
     assert stored_question() == USER_Q and len(fake.prompts) == calls
-
 
 # ---------- changing the question of an existing project ----------
 def test_question_change_needs_an_explicit_choice_and_reset_is_destructive_only_when_chosen(api):
@@ -214,7 +195,6 @@ def test_question_change_needs_an_explicit_choice_and_reset_is_destructive_only_
     assert papers == {} and sentences == {} and refs == {} and msgs == 0
     assert c.get("/api/graph").json()["question"] == NEW_Q
 
-
 def test_keep_papers_clears_only_analysis_and_preserves_papers_text_refs_and_chat(api):
     c, _ = api
     full_project(c)
@@ -232,7 +212,6 @@ def test_keep_papers_clears_only_analysis_and_preserves_papers_text_refs_and_cha
     # New uploads wait until the existing papers are re-analyzed (no partial analyses mixed together).
     r = upload(c, "Results: a fresh paper found 9 percent gains after 3 weeks.", "Fresh", mode="library")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "pending_analysis"
-
 
 def test_deliberate_reanalysis_keeps_paper_numbers_and_never_reuses_retired_ones(api):
     c, fake = api
@@ -255,7 +234,6 @@ def test_deliberate_reanalysis_keeps_paper_numbers_and_never_reuses_retired_ones
     assert retired and not retired & {v for k, v in new.items() if k.startswith("claim:")}
     assert c.get("/api/checks").json()["ok"]
 
-
 def test_reanalysis_failure_keeps_the_paper_and_its_text_pending(api):
     c, fake = api
     build_library(c)
@@ -268,7 +246,6 @@ def test_reanalysis_failure_keeps_the_paper_and_its_text_pending(api):
     assert snapshot()[:2] == (papers, sentences)
     first = c.get("/api/workspace").json()["pending_papers"][0]
     assert first["id"] == pid and first["status"] == "pending"
-
 
 # ---------- chatbot compatibility ----------
 def test_chat_uses_the_confirmed_question_and_keeps_earlier_turns_out_of_the_model(api):
@@ -284,7 +261,6 @@ def test_chat_uses_the_confirmed_question_and_keeps_earlier_turns_out_of_the_mod
     assert NEW_Q in prompt and "Where do the papers disagree?" not in prompt
     msgs = c.get("/api/chat/messages").json()["messages"]
     assert [m["question"] for m in msgs] == [DEFAULT_TEST_QUESTION] * 2 + [NEW_Q] * 2
-
 
 def test_question_module_has_no_dependency_on_ingestion_or_the_database():
     tree = ast.parse(inspect.getsource(questions))

@@ -28,14 +28,11 @@ log = logging.getLogger(__name__)
 FAILED_PAIR = "The comparison could not be completed (model error), so no judgment is shown."
 FAILED_IMPACT = "The impact assessment could not be completed (model error), so no judgment is shown."
 
-
 class NoQuestionError(RuntimeError):
     """No active research question (none set via the workspace and no .env default)."""
 
-
 class NoLibraryError(RuntimeError):
     """Evaluation requested before any library paper with claims exists."""
-
 
 class DuplicatePaperError(RuntimeError):
     """The same PDF (same content hash) is already stored; re-uploading would replace its analysis."""
@@ -45,10 +42,8 @@ class DuplicatePaperError(RuntimeError):
                          "again, because that would replace its existing claims and relationships.")
         self.paper = paper
 
-
 class ModelUnavailableError(RuntimeError):
     """Gemini failed during extraction/embedding of an upload; the upload was rolled back."""
-
 
 class QuestionConflict(RuntimeError):
     """Changing the question would mix analyses; requires an explicit, user-confirmed choice."""
@@ -59,18 +54,14 @@ class QuestionConflict(RuntimeError):
                          "analysis for re-analysis, or reset=true to delete everything.")
         self.current, self.counts = current, counts
 
-
 class PendingAnalysisError(RuntimeError):
     """Papers are waiting to be re-analyzed under the current question; finish that first."""
-
 
 class AnalysisOrderError(RuntimeError):
     """An evaluated paper's impact needs the re-analyzed library; analyze library papers first."""
 
-
 class AlreadyAnalyzedError(RuntimeError):
     """The paper already has its analysis under the current question."""
-
 
 # ---------- workspace: the single active research question ----------
 def current_question() -> Optional[str]:
@@ -79,13 +70,11 @@ def current_question() -> Optional[str]:
     with db.connect() as conn:
         return db.get_question(conn)
 
-
 def active_question() -> str:
     q = current_question()
     if not q:
         raise NoQuestionError("Set a research question first (PUT /api/workspace).")
     return q
-
 
 def workspace_state() -> Dict:
     with db.connect() as conn:
@@ -99,7 +88,6 @@ def workspace_state() -> Dict:
             "has_library": counts["library_claims"] > 0,
             "pending_papers": [{"id": p["id"], "title": p["title"], "is_new": bool(p["is_new"]),
                                 "status": p["analysis_status"]} for p in pending]}
-
 
 def set_workspace_question(question: str, reset: bool = False, keep_papers: bool = False) -> Dict:
     """Set the active research question. Only called after the user confirmed the question in the UI.
@@ -137,7 +125,6 @@ def set_workspace_question(question: str, reset: bool = False, keep_papers: bool
     return {**workspace_state(), "reset": did_reset, "analysis_cleared": cleared > 0, "previous_question": current,
             "changed": changed}
 
-
 def _parallel(fn: Callable, items: Sequence) -> List:
     """Run fn over items concurrently; each result is the return value or the raised Exception."""
     def safe(item):
@@ -151,14 +138,11 @@ def _parallel(fn: Callable, items: Sequence) -> List:
     with ThreadPoolExecutor(max_workers=max(1, settings.llm_workers)) as ex:
         return list(ex.map(safe, items))
 
-
 def content_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
-
 def make_paper_id(title: str, data: bytes) -> str:
     return f"{ingest.slugify(title, 30)}-{hashlib.sha1(data).hexdigest()[:6]}"
-
 
 # ---------- 1. ingest ----------
 def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, abstract_text: Optional[str] = None,
@@ -185,22 +169,18 @@ def add_paper(*, paper_id: str, title: str, pdf_bytes: Optional[bytes] = None, a
         db.insert_sentences(conn, sentences)
     return {"paper_id": paper_id, "sentences": len(sentences), "access_level": level}
 
-
 # ---------- 2. extract + embed ----------
 _question_vecs: Dict[str, np.ndarray] = {}
-
 
 def _unit(v) -> np.ndarray:
     v = np.asarray(v, dtype=np.float32)
     n = float(np.linalg.norm(v))
     return v / n if n else v
 
-
 def question_vector(llm: LLM, question: str) -> np.ndarray:
     if question not in _question_vecs:
         _question_vecs[question] = _unit(llm.embed([question])[0])
     return _question_vecs[question]
-
 
 def extract_claims(llm: LLM, paper_id: str, question: Optional[str] = None) -> Tuple[List[int], Dict]:
     question = question or active_question()
@@ -224,13 +204,11 @@ def extract_claims(llm: LLM, paper_id: str, question: Optional[str] = None) -> T
     log.info("extracted %s: %s", paper_id, report)
     return ids, report
 
-
 def _claim_inputs(conn, claim_ids) -> Dict[int, Dict]:
     claims = db.claims_by_ids(conn, claim_ids)
     for c in claims.values():
         c["context"] = db.context_sentences(conn, c["sentence_ids"], window=1)
     return claims
-
 
 # ---------- 3. compare ----------
 def compare_claims(llm: LLM, claim_ids: List[int], question: Optional[str] = None, refresh: bool = False) -> List[int]:
@@ -264,7 +242,6 @@ def compare_claims(llm: LLM, claim_ids: List[int], question: Optional[str] = Non
                 "claim_a": p["a"], "claim_b": p["b"], "similarity": p["sim"], "condition_diff": diff,
                 "model": getattr(llm, "model_name", None), **verdict}))
     return rel_ids
-
 
 # ---------- 4. new-paper impact (separate Gemini judgment; never mapped from labels) ----------
 def assess_impact(llm: LLM, new_paper_id: str, question: Optional[str] = None) -> int:
@@ -300,7 +277,6 @@ def assess_impact(llm: LLM, new_paper_id: str, question: Optional[str] = None) -
                                     "relationship_id": r["id"], "model": getattr(llm, "model_name", None), **verdict})
     return len(jobs)
 
-
 # ---------- read models ----------
 def _sentences_for(conn, claims, rels=(), impacts=()) -> Dict[str, Dict]:
     ids = [s for c in claims for s in c["sentence_ids"]]
@@ -308,11 +284,9 @@ def _sentences_for(conn, claims, rels=(), impacts=()) -> Dict[str, Dict]:
     ids += [s for i in impacts for s in (i.get("cited_sentence_ids") or [])]
     return db.sentences_by_ids(conn, ids)
 
-
 def author_index(conn, papers: List[Dict]) -> AuthorIndex:
     """Author lists for this request, parsed from stored front-matter sentences (nothing is stored)."""
     return AuthorIndex(papers, db.page1_sentences(conn, [p["id"] for p in papers]))
-
 
 def graph_payload(question: Optional[str] = None) -> Dict:
     question = question or current_question()  # may be None before a question is set
@@ -327,7 +301,6 @@ def graph_payload(question: Optional[str] = None) -> Dict:
     return build_graph(question, papers, claims, rels, sentences, discovery=discovery, refs=refs,
                        authors=authors, reviews=reviews)
 
-
 def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str = "live") -> Dict:
     with db.connect() as conn:
         paper = db.get_paper(conn, paper_id)
@@ -340,7 +313,6 @@ def impact_summary(paper_id: str, extraction: Optional[Dict] = None, status: str
     return build_impact_summary(paper, claims, impacts, sentences, papers, extraction=extraction, status=status,
                                 authors=authors, reviews=reviews)
 
-
 def extraction_warning(report: Dict) -> Optional[str]:
     """Plain statement of why a paper produced no claims (never claims more than the run shows)."""
     if report.get("outcome") == "no_relevant_findings":
@@ -349,7 +321,6 @@ def extraction_warning(report: Dict) -> Optional[str]:
         return (f"{report.get('returned', 0)} candidate findings were returned, but none passed citation "
                 "verification, so none were added.")
     return None
-
 
 def _extract_or_discard(llm: LLM, paper_id: str, question: str) -> Tuple[List[int], Dict]:
     """Extraction + embedding for an upload. If Gemini fails here, delete the just-ingested paper
@@ -366,7 +337,6 @@ def _extract_or_discard(llm: LLM, paper_id: str, question: str) -> Tuple[List[in
             f"Gemini was unavailable during claim extraction ({reason}). The paper was not saved; "
             "please try again.") from exc
 
-
 def _check_upload(pdf_bytes: bytes, question: Optional[str], replace: bool = False) -> str:
     """Fail before storing anything: no question, a PDF that is already stored (unless the caller
     explicitly asked to replace it — only the seed CLI does), or no extractable text."""
@@ -382,7 +352,6 @@ def _check_upload(pdf_bytes: bytes, question: Optional[str], replace: bool = Fal
             raise DuplicatePaperError(existing)
     ingest.extract_pages(pdf_bytes)  # raises NoExtractableTextError
     return question
-
 
 def add_library_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, doi: Optional[str] = None,
                       url: Optional[str] = None, year: Optional[int] = None, license: Optional[str] = None,
@@ -408,7 +377,6 @@ def add_library_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
             "relationships_created": len(rel_ids), "library_papers": counts["library_papers"],
             "warning": None if claim_ids else extraction_warning(report),
             "timings_s": timings}
-
 
 def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, doi: Optional[str] = None,
                       url: Optional[str] = None, year: Optional[int] = None, license: Optional[str] = None,
@@ -439,7 +407,6 @@ def process_new_paper(llm: LLM, pdf_bytes: bytes, title: Optional[str] = None, d
     summary["mode"] = "evaluate"
     summary["question"] = question
     return summary
-
 
 def analyze_stored_paper(llm: LLM, paper_id: str, question: Optional[str] = None) -> Dict:
     """Deliberate re-analysis (user-triggered) of a stored paper under the current question: extraction from
@@ -482,11 +449,9 @@ def analyze_stored_paper(llm: LLM, paper_id: str, question: Optional[str] = None
             "relationships_created": len(rel_ids), "impacts_assessed": impacts, "pending_remaining": remaining,
             "timings_s": {"total": round(time.time() - t0, 1)}}
 
-
 # ---------- clearing (user-confirmed; one project only) ----------
 class AnalysisRunningError(RuntimeError):
     """Papers are being analyzed right now; clearing must wait until that finishes."""
-
 
 def _refuse_while_processing(conn) -> None:
     running = db.processing_papers(conn)
@@ -495,7 +460,6 @@ def _refuse_while_processing(conn) -> None:
         raise AnalysisRunningError(f"{names} {'is' if len(running) == 1 else 'are'} being analyzed right now. "
                                    "Wait until the analysis finishes, then try again.")
 
-
 def clear_chat() -> Dict:
     """Delete this project's conversation. Answers still being prepared are discarded (chat epoch)."""
     with db.connect() as conn:
@@ -503,7 +467,6 @@ def clear_chat() -> Dict:
         deleted = db.clear_chat(conn)
         db.bump_epochs(conn, chat=True)
     return {"deleted": deleted}
-
 
 def clear_papers() -> Dict:
     """Delete every paper of this project and everything derived from it, including the conversation (its
@@ -518,7 +481,6 @@ def clear_papers() -> Dict:
     return {"deleted": {"papers": counts["papers"], "claims": counts["claims"],
                         "relationships": counts["relationships"], "chat_messages": messages},
             "workspace": workspace_state()}
-
 
 def turns_touching(rows: List[Dict], fp: Dict, paper_id: str) -> List[int]:
     """Ids of chat messages that used evidence from the paper: cited one of its sentences, were asked about it
@@ -551,7 +513,6 @@ def turns_touching(rows: List[Dict], fp: Dict, paper_id: str) -> List[int]:
             last_user = None
     return sorted(flagged)
 
-
 def remove_paper(paper_id: str) -> Dict:
     """Delete one paper with its sentences, claims, relationships, impacts, reviews and discovery links.
     The conversation is kept, but turns that used the paper's evidence are flagged and never reach the model
@@ -573,9 +534,7 @@ def remove_paper(paper_id: str) -> Dict:
                         "impacts": len(fp["impacts"])},
             "chat_messages_flagged": flagged, "workspace": workspace_state()}
 
-
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-
 
 def lookup_upload(sha256: str) -> Dict:
     """Has this exact PDF (by full SHA-256) been stored, and has its analysis finished?

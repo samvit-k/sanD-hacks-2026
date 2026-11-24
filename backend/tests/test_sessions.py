@@ -13,12 +13,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db, main, pipeline
-from app import llm as llm_mod
-from app.config import settings
+from app import db, main
 
 from .conftest import DEFAULT_TEST_QUESTION, TEST_SESSION
-from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, PAPERS, pdf
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -27,20 +24,12 @@ B_PAPER = ("Spaced repetition study", "Abstract\nA vocabulary study with adult l
            "Spaced repetition improved vocabulary retention by 18 percent after 6 weeks.\n"
            "Massed practice improved retention by 7 percent after 6 weeks.\nDiscussion\nSpacing helped.")
 
-
 @pytest.fixture
-def env(clean_db, monkeypatch):
-    monkeypatch.setattr(settings, "sim_threshold", 0.2)
-    pipeline._question_vecs.clear()
-    fake = FakeLLM()
-    llm_mod.set_llm(fake)
-    yield fake
-    llm_mod.set_llm(None)
-
+def env(fake_llm):
+    return fake_llm
 
 def client(sid=None):
     return TestClient(main.app, headers={"X-Session-Id": sid} if sid else {})
-
 
 def new_session(question=None, title=None):
     r = client().post("/api/sessions", json={"title": title})
@@ -50,16 +39,13 @@ def new_session(question=None, title=None):
         assert client(sid).put("/api/workspace", json={"question": question}).status_code == 200
     return sid
 
-
 def upload(sid, title, text, mode="library", data=None):
     return client(sid).post("/api/papers", files={"file": ("p.pdf", data or pdf(text), "application/pdf")},
                             data={"title": title, "mode": mode})
 
-
 def build_a():
     for title, text in PAPERS.values():
         assert upload(TEST_SESSION, title, text).status_code == 200
-
 
 def fingerprint(sid):
     """Everything a session owns, read through its own scope."""
@@ -74,7 +60,6 @@ def fingerprint(sid):
             "refs": db.node_ref_map(conn),
             "chat": [m["content"] for m in db.chat_messages(conn, sid)],
         }
-
 
 # ---------- lifecycle and titles ----------
 def test_create_list_get_rename_and_auto_titles(env):
@@ -95,19 +80,16 @@ def test_create_list_get_rename_and_auto_titles(env):
     ids = [x["id"] for x in client().get("/api/sessions").json()["sessions"]]
     assert ids[0] == sid and TEST_SESSION in ids  # most recently updated first
 
-
 def test_auto_title_shortens_long_questions():
     q = "How does AI-assisted tutoring influence student learning outcomes compared with traditional instruction?"
     t = db.auto_title(q)
     assert len(t) <= 60 and t.endswith("…") and not t.endswith(" …") and q.startswith(t[:-1])
     assert db.auto_title(None) == db.AUTO_TITLE
 
-
 def _free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
-
 
 def test_sessions_survive_a_real_backend_restart(env, pg_url):
     """Data written by this process is read back by a SEPARATE, freshly started SpiderMonkey server process
@@ -151,7 +133,6 @@ def test_sessions_survive_a_real_backend_restart(env, pg_url):
         proc.terminate()
         proc.wait(timeout=10)
 
-
 # ---------- the session id is mandatory and verified ----------
 def test_missing_invalid_and_unknown_session_ids_never_fall_back(env):
     for path in ("/api/workspace", "/api/graph", "/api/checks", "/api/chat/messages"):
@@ -163,14 +144,12 @@ def test_missing_invalid_and_unknown_session_ids_never_fall_back(env):
     assert client("ffffffffffff").post("/api/chat", json={"message": "hi"}).status_code == 404
     assert client().get("/api/health").json()["question"] is None  # no session -> no question leaks
 
-
 def test_database_access_without_a_session_is_impossible():
     def attempt():
         with db.connect():
             pass
     with pytest.raises(db.NoSessionError):
         contextvars.Context().run(attempt)
-
 
 # ---------- isolation ----------
 def test_same_pdf_in_two_sessions_is_independent(env):
@@ -186,7 +165,6 @@ def test_same_pdf_in_two_sessions_is_independent(env):
     a = fingerprint(TEST_SESSION)
     assert a["papers"] == [ra.json()["paper"]["id"]] and a["claims"]  # A keeps its copy and claims
     assert fingerprint(sid_b)["papers"] == []
-
 
 def test_graphs_claims_refs_checks_and_chat_are_per_session(env):
     build_a()
@@ -209,7 +187,6 @@ def test_graphs_claims_refs_checks_and_chat_are_per_session(env):
     assert client(TEST_SESSION).get("/api/checks").json()["ok"] and client(sid_b).get("/api/checks").json()["ok"]
     assert client(sid_b).get("/api/checks").json()["session_id"] == sid_b
 
-
 def test_chat_memory_and_vector_retrieval_never_cross_sessions(env):
     build_a()
     sid_b = new_session(Q_B)
@@ -230,7 +207,6 @@ def test_chat_memory_and_vector_retrieval_never_cross_sessions(env):
     assert [m["content"] for m in msgs_a][0] == "Where do the papers disagree?"
     assert [m["content"] for m in msgs_b][0] == "What does the evidence say about retention?" and len(msgs_b) == 2
 
-
 def test_chat_context_cannot_point_into_another_session(env):
     build_a()
     sid_b = new_session(Q_B)
@@ -241,7 +217,6 @@ def test_chat_context_cannot_point_into_another_session(env):
     assert foreign not in b_ids
     r = client(sid_b).post("/api/chat", json={"message": "Explain this", "context": {"kind": "claim", "id": foreign}})
     assert r.status_code == 422  # resolved only against B's own claims
-
 
 def test_pending_reanalysis_is_per_session(env):
     build_a()
@@ -254,7 +229,6 @@ def test_pending_reanalysis_is_per_session(env):
     assert upload(TEST_SESSION, *B_PAPER).json()["detail"]["code"] == "pending_analysis"
     pid = client(TEST_SESSION).get("/api/workspace").json()["pending_papers"][0]["id"]
     assert client(sid_b).post(f"/api/papers/{pid}/analyze").status_code == 404  # A's paper is not in B
-
 
 def test_deleting_a_session_needs_confirmation_and_spares_the_others(env):
     build_a()
@@ -272,7 +246,6 @@ def test_deleting_a_session_needs_confirmation_and_spares_the_others(env):
     assert sid_b not in [s["id"] for s in client().get("/api/sessions").json()["sessions"]]
     assert fingerprint(TEST_SESSION) == keep  # the other project is untouched
     assert client().delete(f"/api/sessions/{sid_b}", params={"confirm": sid_b}).status_code == 404
-
 
 def test_concurrent_requests_stay_in_their_own_sessions(env):
     sid_b = new_session(Q_B)

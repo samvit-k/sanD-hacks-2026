@@ -65,7 +65,6 @@ export const REVIEW = {
   label: 'Reclassification proposed',
   help: 'Someone proposed a different label; the original label is shown until a person accepts the proposal.',
 }
-export const IMPACT_ORDER = ['challenges', 'qualifies', 'strengthens', 'leaves_unresolved']
 
 export const CONDITION_LABELS = {
   population: 'Population',

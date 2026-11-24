@@ -16,7 +16,6 @@ from app.config import settings
 LEGACY_SQL = (Path(__file__).parent / "fixtures" / "legacy_schema_stage_c.sql").read_text()
 QUESTION = "Do intelligent tutoring systems improve student learning outcomes?"
 
-
 @pytest.fixture
 def fresh_db(pg_server, monkeypatch):
     """An empty database on the test server; settings point at it for the duration of the test."""
@@ -29,11 +28,9 @@ def fresh_db(pg_server, monkeypatch):
     with psycopg.connect(pg_server.get_uri(), autocommit=True) as c:
         c.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
 
-
 def vec(seed):
     v = np.random.default_rng(seed).random(768).astype(np.float32)
     return v / np.linalg.norm(v)
-
 
 @pytest.fixture
 def legacy_db(fresh_db):
@@ -71,11 +68,9 @@ def legacy_db(fresh_db):
         c.commit()
     return fresh_db
 
-
 def legacy_columns(url):
     with psycopg.connect(url, row_factory=dict_row) as c:
         return {t: migrate.table_columns(c, "public", t) for t in db.SESSION_TABLES}
-
 
 def fingerprints(url, schema, columns=None):
     """With `columns` (captured before the move), only the original columns are compared; additive columns added
@@ -83,11 +78,9 @@ def fingerprints(url, schema, columns=None):
     with psycopg.connect(url, row_factory=dict_row) as c:
         return {t: migrate.table_fingerprint(c, schema, t, (columns or {}).get(t)) for t in db.SESSION_TABLES}
 
-
 def layout(url):
     with psycopg.connect(url, row_factory=dict_row) as c:
         return migrate.inspect_layout(c)
-
 
 def assert_untouched(url, before):
     assert layout(url)["state"] == "legacy"
@@ -95,7 +88,6 @@ def assert_untouched(url, before):
     with psycopg.connect(url, row_factory=dict_row) as c:
         assert c.execute("SELECT to_regclass('public.sessions') AS r").fetchone()["r"] is None
         assert not c.execute("SELECT 1 FROM pg_namespace WHERE nspname LIKE 'rl\\_%'").fetchone()
-
 
 # ---------- 1-3, 10: a successful migration ----------
 def test_migration_moves_every_table_without_changing_a_row(legacy_db):
@@ -115,7 +107,6 @@ def test_migration_moves_every_table_without_changing_a_row(legacy_db):
     with psycopg.connect(legacy_db, row_factory=dict_row) as c:  # the shared cache stays shared
         assert c.execute("SELECT count(*) AS n FROM public.discovery_cache").fetchone()["n"] == 1
 
-
 def test_migrated_research_is_readable_through_the_session_interface(legacy_db):
     sid = migrate.migrate_legacy()["session_id"]
     with db.use_session(sid):
@@ -132,7 +123,6 @@ def test_migrated_research_is_readable_through_the_session_interface(legacy_db):
             assert not any(db.integrity_violations(conn).values())
             assert db.nearest_claims(conn, vec(2), 1) == [3]  # embeddings intact and searchable
             assert [m["content"] for m in db.chat_messages(conn, sid)][0] == "Do the papers agree?"
-
 
 def test_sequences_constraints_and_indexes_still_work_after_the_move(legacy_db):
     sid = migrate.migrate_legacy()["session_id"]
@@ -156,7 +146,6 @@ def test_sequences_constraints_and_indexes_still_work_after_the_move(legacy_db):
         db.delete_paper(conn, "paper-d-dddddd")
         assert db.analysis_counts(conn)["impacts"] == 0
 
-
 # ---------- 5-6: failures roll everything back ----------
 def test_failure_just_before_commit_rolls_back_everything(legacy_db):
     before = fingerprints(legacy_db, "public")
@@ -168,7 +157,6 @@ def test_failure_just_before_commit_rolls_back_everything(legacy_db):
     assert_untouched(legacy_db, before)
     assert migrate.migrate_legacy()["migrated"]  # and it can simply be run again
 
-
 def test_failed_session_initialisation_cannot_leave_a_committed_partial_migration(legacy_db, monkeypatch):
     before = fingerprints(legacy_db, "public")
 
@@ -178,7 +166,6 @@ def test_failed_session_initialisation_cannot_leave_a_committed_partial_migratio
     with pytest.raises(psycopg.errors.SyntaxError):
         migrate.migrate_legacy()
     assert_untouched(legacy_db, before)
-
 
 def test_verification_mismatch_rolls_back(legacy_db, monkeypatch):
     before = fingerprints(legacy_db, "public")
@@ -195,7 +182,6 @@ def test_verification_mismatch_rolls_back(legacy_db, monkeypatch):
     monkeypatch.setattr(migrate, "table_fingerprint", real)
     assert_untouched(legacy_db, before)
 
-
 # ---------- 7-9: reruns, inconsistent states, fresh databases ----------
 def test_rerun_is_a_verified_no_op_without_duplicate_sessions(legacy_db):
     sid = migrate.migrate_legacy()["session_id"]
@@ -206,7 +192,6 @@ def test_rerun_is_a_verified_no_op_without_duplicate_sessions(legacy_db):
     assert [s["id"] for s in db.list_sessions()] == [sid]
     assert fingerprints(legacy_db, db.schema_for(sid)) == after
 
-
 def test_partial_legacy_layout_is_refused_and_untouched(legacy_db):
     with psycopg.connect(legacy_db, autocommit=True) as c:
         c.execute("DROP TABLE public.chat_messages")
@@ -215,7 +200,6 @@ def test_partial_legacy_layout_is_refused_and_untouched(legacy_db):
     assert layout(legacy_db)["state"] == "inconsistent"
     with psycopg.connect(legacy_db, row_factory=dict_row) as c:
         assert c.execute("SELECT count(*) AS n FROM public.claims").fetchone()["n"] == 4
-
 
 @pytest.mark.parametrize("damage, problem", [
     ("DROP SCHEMA {schema} CASCADE", "schema is missing"),
@@ -230,7 +214,6 @@ def test_inconsistent_migrated_states_are_refused(legacy_db, damage, problem):
     with pytest.raises(migrate.MigrationError, match=problem):
         migrate.migrate_legacy()
 
-
 def test_fresh_empty_database_is_not_mistaken_for_a_broken_migration(fresh_db):
     report = migrate.migrate_legacy()
     assert report == {"migrated": False, "state": "fresh", "reason": report["reason"]}
@@ -239,13 +222,11 @@ def test_fresh_empty_database_is_not_mistaken_for_a_broken_migration(fresh_db):
     sid = db.create_session("First project")["id"]
     assert layout(fresh_db)["sessions"] == [sid] and migrate.migrate_legacy()["state"] == "migrated"
 
-
 def test_dry_run_reports_and_changes_nothing(legacy_db):
     before = fingerprints(legacy_db, "public")
     report = migrate.migrate_legacy(dry_run=True)
     assert report["dry_run"] and report["tables"] == before and report["question"] == QUESTION
     assert_untouched(legacy_db, before)
-
 
 # ---------- maintenance state ----------
 def test_unmigrated_database_is_refused_by_app_startup_paths(legacy_db):
@@ -254,7 +235,6 @@ def test_unmigrated_database_is_refused_by_app_startup_paths(legacy_db):
     r = TestClient(main.app).get("/api/workspace", headers={"X-Session-Id": "0123456789ab"})
     assert r.status_code == 503 and r.json()["detail"]["code"] == "migration_required"
     assert TestClient(main.app).get("/api/sessions").status_code == 503
-
 
 # ---------- backup ----------
 def test_backup_is_restorable_and_never_overwrites(legacy_db, tmp_path, monkeypatch):
@@ -275,7 +255,6 @@ def test_backup_is_restorable_and_never_overwrites(legacy_db, tmp_path, monkeypa
     with pytest.raises(migrate.BackupError, match="already exists"):
         migrate.backup_database(str(tmp_path), verify_restore=False)
     assert Path(first["path"]).stat().st_size == size
-
 
 def test_cli_requires_a_backup_and_stops_if_it_fails(legacy_db, monkeypatch, capsys):
     with pytest.raises(SystemExit):

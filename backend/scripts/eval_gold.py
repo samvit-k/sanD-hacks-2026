@@ -16,11 +16,9 @@ from app.config import ROOT  # noqa: E402
 
 GOLD = ROOT / "eval" / "gold_pairs.json"
 
-
 def find_claim(claims, ref):
     hits = [c for c in claims if c["paper_id"] == ref["paper_id"] and ref["contains"].lower() in c["text"].lower()]
     return hits[0] if len(hits) == 1 else None
-
 
 def main() -> None:
     import argparse
@@ -29,7 +27,6 @@ def main() -> None:
     args = ap.parse_args()
     with db.use_session(db.get_session(args.session)["id"]):
         _evaluate()
-
 
 def _evaluate() -> None:
     gold = json.loads(GOLD.read_text())
@@ -63,7 +60,6 @@ def _evaluate() -> None:
         print(f"{'✓' if ok else '✗'} {g['id']}: gold={g['impact']} model={got}  — {g.get('reason', '')}")
     if total:
         print(f"\nagreement: {agree}/{total} ({agree / total:.0%}); target >= 70%")
-
 
 if __name__ == "__main__":
     main()

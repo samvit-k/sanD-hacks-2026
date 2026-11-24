@@ -4,8 +4,7 @@
 // - Deleting opens a separate dialog bound to the project chosen at that moment (frozen), with an explicit
 //   acknowledgement; it can never end up deleting a different project.
 import { useEffect, useRef, useState } from 'react'
-
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
+import { plural } from '../../text.js'
 
 function DeleteDialog({ session, onCancel, onConfirm }) {
   const [ack, setAck] = useState(false)

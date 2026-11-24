@@ -33,10 +33,8 @@ _AFFILIATION_WORDS = {
     "academy", "hospital", "foundation", "group", "microsoft", "google", "amazon", "meta", "ibm", "usa", "china",
 }
 
-
 def _plain(s: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", s).split())
-
 
 def _fold(s: str) -> str:
     """Lowercase, accents removed, hyphens as spaces (for matching only; display keeps the source spelling)."""
@@ -44,12 +42,10 @@ def _fold(s: str) -> str:
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return " ".join(s.lower().replace("-", " ").replace("’", "'").split())
 
-
 def _after_title(text: str, title: str) -> Optional[str]:
     t, ttl = _plain(text), _plain(title)
     i = t.lower().find(ttl.lower())
     return t[i + len(ttl):] if ttl and i >= 0 else None
-
 
 def parse_author_block(text: str, title: str) -> Dict:
     """Authors listed after the title in a front-matter sentence. Returns {status, names, reason}."""
@@ -97,7 +93,6 @@ def parse_author_block(text: str, title: str) -> Dict:
         return {"status": UNKNOWN, "names": names, "reason": "implausibly many author names"}
     return {"status": PARSED, "names": names, "reason": None}
 
-
 def paper_authors(paper: Dict, page1_sentences: Iterable[Dict]) -> Dict:
     """Author list for one paper from its stored page-1 sentences (first one containing the title)."""
     for s in page1_sentences:
@@ -107,15 +102,12 @@ def paper_authors(paper: Dict, page1_sentences: Iterable[Dict]) -> Dict:
     return {"status": UNKNOWN, "names": [], "reason": "no first-page sentence contains the paper title",
             "source_sentence_id": None, "method": "parsed from the stored front-matter sentence"}
 
-
 def _key(name: str) -> Tuple[str, List[str], str]:
     parts = _fold(name).replace(".", ". ").split()
     return parts[0], parts[1:-1], parts[-1]
 
-
 def _initial(w: str) -> bool:
     return len(w.rstrip(".")) == 1
-
 
 def match_names(a: str, b: str) -> Optional[str]:
     """'same' | 'possible' | None. Same surname required; given names must agree conservatively."""
@@ -131,7 +123,6 @@ def match_names(a: str, b: str) -> Optional[str]:
     if ma and mb and [w[0] for w in ma] != [w[0] for w in mb]:
         return None
     return "same"
-
 
 def shared_authors(a: Dict, b: Dict) -> Dict:
     """Pair assessment between two papers' author lists. Never asserts independence."""
@@ -156,7 +147,6 @@ def shared_authors(a: Dict, b: Dict) -> Dict:
             "independence_established": False, "review_needed": status != NONE_DETECTED,
             "summary": independence_summary(status, same, possible, a, b)}
 
-
 def independence_summary(status: str, same: List[str], possible: List[str], a: Dict, b: Dict) -> str:
     if status == SHARED:
         n = len(same)
@@ -173,12 +163,10 @@ def independence_summary(status: str, same: List[str], possible: List[str], a: D
     return ("No shared authors detected in the papers' author lists. This does not establish independence: shared "
             "data, labs or funding are not checked.")
 
-
 # Labels whose user-facing meaning leans on the evidence being separate: "supports" reads as corroboration and
 # "strengthens" was defined to the model as "adds independent support".
 SUPPORTIVE = {"supports", "strengthens"}
 REVIEW_HEADLINE = "Independence not established — review needed"
-
 
 def independence_flag(label: Optional[str], pair: Dict, insufficient: bool = False) -> Dict:
     """How prominently to qualify a relationship/impact label. level: 'review' (prominent), 'note' (shown with the
@@ -188,7 +176,6 @@ def independence_flag(label: Optional[str], pair: Dict, insufficient: bool = Fal
     if pair["status"] == NONE_DETECTED:
         return {"level": "note", "headline": "Supporting evidence — independence not verified"}
     return {"level": "review", "headline": REVIEW_HEADLINE}
-
 
 class AuthorIndex:
     """Per-request cache: author lists per paper and pair assessments."""

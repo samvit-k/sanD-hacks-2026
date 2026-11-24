@@ -26,7 +26,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 SESSION_HEADER = "X-Session-Id"
 
-
 def _db_guard(fn):
     try:
         return fn()
@@ -37,7 +36,6 @@ def _db_guard(fn):
     except db.StaleOperation as exc:
         # The project's papers or conversation were cleared (in this tab or another) while this ran: nothing saved.
         raise HTTPException(409, {"message": str(exc), "code": "data_changed", "cleared": exc.what})
-
 
 def _check_layout() -> None:
     """Maintenance state: refuse research requests while the pre-session layout has not been migrated."""
@@ -50,7 +48,6 @@ def _check_layout() -> None:
         raise HTTPException(503, {"code": "migration_required",
                                   "message": "The database still uses the single-workspace layout. Stop the backend, "
                                              "run `python -m app.migrate --backup-dir <dir>`, then restart."})
-
 
 def require_session(x_session_id: Optional[str] = Header(None, alias=SESSION_HEADER)) -> str:
     """The verified session of this request. Never defaults."""
@@ -68,12 +65,10 @@ def require_session(x_session_id: Optional[str] = Header(None, alias=SESSION_HEA
         raise HTTPException(404, {"message": "This research session does not exist.", "code": "session_not_found"})
     return sid
 
-
 def _in(sid: str, fn):
     """Run fn with all database access confined to session `sid`."""
     with db.use_session(sid), db.unguarded():  # only _guarded() below adds a generation check
         return _db_guard(fn)
-
 
 def _guarded(sid: str, fn, papers: bool = True, chat: bool = False):
     """Like _in, for long operations: if the project's papers (and, with chat=True, its conversation) are cleared
@@ -83,11 +78,16 @@ def _guarded(sid: str, fn, papers: bool = True, chat: bool = False):
             return fn()
     return _in(sid, run)
 
+def _require_llm():
+    """The configured Gemini client, or 503 with the configuration error (e.g. no API key)."""
+    try:
+        return get_llm()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
 
 def _touched(sid: str, result):
     db.touch_session(sid)
     return result
-
 
 @app.get("/api/health")
 def health(x_session_id: Optional[str] = Header(None, alias=SESSION_HEADER)):
@@ -105,7 +105,6 @@ def health(x_session_id: Optional[str] = Header(None, alias=SESSION_HEADER)):
             "brightdata": settings.brightdata_configured, "question": question,
             "max_claims": settings.max_claims, "top_k": settings.top_k}
 
-
 # ---------- sessions ----------
 def _session_payload(row: Dict) -> Dict:
     with db.connect_registry() as conn:
@@ -113,14 +112,11 @@ def _session_payload(row: Dict) -> Dict:
     return {"id": row["id"], "title": row["title"], "title_source": row["title_source"],
             "created_at": row["created_at"].isoformat(), "updated_at": row["updated_at"].isoformat(), **summary}
 
-
 class SessionCreate(BaseModel):
     title: Optional[str] = None  # empty: automatic title (follows the confirmed research question)
 
-
 class SessionPatch(BaseModel):
     title: Optional[str] = None  # null: revert to the automatic title
-
 
 def _session_errors(fn):
     try:
@@ -131,27 +127,22 @@ def _session_errors(fn):
     except db.SessionNotFound:
         raise HTTPException(404, {"message": "This research session does not exist.", "code": "session_not_found"})
 
-
 @app.get("/api/sessions")
 def list_sessions():
     return _session_errors(lambda: {"sessions": [_session_payload(r) for r in db.list_sessions()]})
-
 
 @app.post("/api/sessions", status_code=201)
 def create_session(req: SessionCreate):
     return _session_errors(lambda: _session_payload(db.create_session(req.title)))
 
-
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str):
     return _session_errors(lambda: _session_payload(db.get_session(session_id)))
-
 
 @app.patch("/api/sessions/{session_id}")
 def rename_session(session_id: str, req: SessionPatch):
     """Rename (title_source becomes 'manual' and is never auto-updated again), or title=null to revert to auto."""
     return _session_errors(lambda: _session_payload(db.rename_session(session_id, req.title)))
-
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session(session_id: str, confirm: Optional[str] = None):
@@ -168,19 +159,16 @@ def delete_session(session_id: str, confirm: Optional[str] = None):
         return {"deleted": sid, "title": row["title"], "counts": summary["counts"]}
     return _session_errors(run)
 
-
 # ---------- workspace (the session's central question) ----------
 @app.get("/api/workspace")
 def get_workspace(sid: str = Depends(require_session)):
     """The session's research question and how much analysis exists under it."""
     return _in(sid, lambda: {**pipeline.workspace_state(), "session_id": sid})
 
-
 class WorkspaceRequest(BaseModel):
     question: str
     reset: bool = False        # delete everything in THIS session (papers included)
     keep_papers: bool = False  # keep papers + text, clear their analysis for deliberate re-analysis
-
 
 @app.put("/api/workspace")
 def put_workspace(req: WorkspaceRequest, sid: str = Depends(require_session)):
@@ -198,20 +186,15 @@ def put_workspace(req: WorkspaceRequest, sid: str = Depends(require_session)):
     db.touch_session(sid)
     return {**out, "session_id": sid}
 
-
 class ProposeRequest(BaseModel):
     interest: str
     previous: List[str] = []
-
 
 @app.post("/api/question/propose")
 def propose_question(req: ProposeRequest, sid: str = Depends(require_session)):
     """Gemini suggests ONE central research question from a broad interest. Writes nothing: the user must
     review, optionally edit, and confirm it (PUT /api/workspace) before it becomes the session's question."""
-    try:
-        llm = get_llm()
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    llm = _require_llm()
     try:
         return {**questions.propose_question(llm, req.interest, req.previous), "session_id": sid}
     except ValueError as exc:
@@ -221,12 +204,10 @@ def propose_question(req: ProposeRequest, sid: str = Depends(require_session)):
     except questions.ProposalRejectedError as exc:
         raise HTTPException(502, {"message": str(exc), "code": "proposal_rejected"})
 
-
 # ---------- graph and inspectors ----------
 @app.get("/api/graph")
 def graph(sid: str = Depends(require_session)):
     return _in(sid, lambda: {**pipeline.graph_payload(), "session_id": sid})
-
 
 @app.get("/api/claims/{claim_id}")
 def claim(claim_id: int, sid: str = Depends(require_session)):
@@ -235,14 +216,12 @@ def claim(claim_id: int, sid: str = Depends(require_session)):
         raise HTTPException(404, "claim not found")
     return g["claims"][str(claim_id)]
 
-
 @app.get("/api/relationships/{rel_id}")
 def relationship(rel_id: int, sid: str = Depends(require_session)):
     g = _in(sid, pipeline.graph_payload)
     if str(rel_id) not in g["relationships"]:
         raise HTTPException(404, "relationship not found")
     return g["relationships"][str(rel_id)]
-
 
 # ---------- classification reviews (audit trail; stored labels are never rewritten) ----------
 class ReviewProposal(BaseModel):
@@ -252,12 +231,10 @@ class ReviewProposal(BaseModel):
     reason: str
     reviewer: str              # the person proposing it
 
-
 class ReviewDecision(BaseModel):
     decision: str              # accepted | rejected
     decided_by: str
     note: Optional[str] = None
-
 
 def _review_target_label(conn, kind: str, target_id: int) -> str:
     table = {"relationship": ("relationships", "label"), "impact": ("impacts", "impact")}.get(kind)
@@ -268,14 +245,12 @@ def _review_target_label(conn, kind: str, target_id: int) -> str:
         raise HTTPException(404, f"{kind} not found in this project")
     return row["label"]
 
-
 @app.get("/api/reviews")
 def list_reviews(sid: str = Depends(require_session)):
     def run():
         with db.connect() as conn:
             return {"reviews": db.all_reviews(conn)}
     return _in(sid, run)
-
 
 @app.post("/api/reviews", status_code=201)
 def propose_review(req: ReviewProposal, sid: str = Depends(require_session)):
@@ -293,7 +268,6 @@ def propose_review(req: ReviewProposal, sid: str = Depends(require_session)):
             return {"id": rid, "original_label": original, "status": "proposed"}
     return _touched(sid, _guarded(sid, run))
 
-
 @app.post("/api/reviews/{review_id}/decision")
 def decide_review(review_id: int, req: ReviewDecision, sid: str = Depends(require_session)):
     """A named person accepts or rejects a proposal (automated, model or human). The relationship/impact row
@@ -309,7 +283,6 @@ def decide_review(review_id: int, req: ReviewDecision, sid: str = Depends(requir
             return row
     return _touched(sid, _in(sid, run))
 
-
 @app.get("/api/impact/latest")
 def latest_impact(sid: str = Depends(require_session)):
     def run():
@@ -320,10 +293,8 @@ def latest_impact(sid: str = Depends(require_session)):
         return pipeline.impact_summary(paper["id"])
     return _in(sid, run)
 
-
 # ---------- uploads and analysis ----------
 UPLOAD_MODES = ("library", "evaluate")
-
 
 @app.get("/api/papers/lookup")
 def lookup_paper(sha256: str, sid: str = Depends(require_session)):
@@ -332,7 +303,6 @@ def lookup_paper(sha256: str, sid: str = Depends(require_session)):
         return _in(sid, lambda: pipeline.lookup_upload(sha256))
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-
 
 @app.post("/api/papers")
 def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None), doi: Optional[str] = Form(None),
@@ -348,10 +318,7 @@ def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None)
     if not data:
         raise HTTPException(422, "Empty file")
     run = pipeline.add_library_paper if mode == "library" else pipeline.process_new_paper
-    try:
-        llm = get_llm()
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    llm = _require_llm()
     try:
         result = _guarded(sid, lambda: run(llm, data, title=title, doi=doi, url=url, year=year))
     except NoExtractableTextError as exc:
@@ -368,14 +335,10 @@ def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None)
         raise HTTPException(503, str(exc))
     return _touched(sid, {**result, "session_id": sid})
 
-
 @app.post("/api/papers/{paper_id}/analyze")
 def analyze_paper(paper_id: str, sid: str = Depends(require_session)):
     """User-triggered re-analysis of a stored paper under the session's current question."""
-    try:
-        llm = get_llm()
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    llm = _require_llm()
     try:
         result = _guarded(sid, lambda: pipeline.analyze_stored_paper(llm, paper_id))
     except KeyError:
@@ -388,11 +351,9 @@ def analyze_paper(paper_id: str, sid: str = Depends(require_session)):
         raise HTTPException(503, str(exc))
     return _touched(sid, {**result, "session_id": sid})
 
-
 class DiscoverRequest(BaseModel):
     query: Optional[str] = None
     paper_id: Optional[str] = None
-
 
 @app.post("/api/discover")
 def discover(req: DiscoverRequest, sid: str = Depends(require_session)):
@@ -413,7 +374,6 @@ def discover(req: DiscoverRequest, sid: str = Depends(require_session)):
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Discovery sources unavailable: {exc}")
 
-
 @app.get("/api/checks")
 def checks(sid: str = Depends(require_session)):
     """Validation criterion 1 (citation integrity) for THIS session: every list must be empty."""
@@ -423,13 +383,11 @@ def checks(sid: str = Depends(require_session)):
         return {"ok": all(not ids for ids in v.values()), "violations": v, "session_id": sid}
     return _in(sid, run)
 
-
 # ---------- clearing (explicitly confirmed; only ever this request's project) ----------
 def _require_confirm(confirm: Optional[bool], what: str) -> None:
     if confirm is not True:
         raise HTTPException(409, {"message": f"Clearing {what} needs explicit confirmation (?confirm=true).",
                                   "code": "confirmation_required"})
-
 
 def _clear(sid: str, fn):
     try:
@@ -438,14 +396,12 @@ def _clear(sid: str, fn):
         raise HTTPException(409, {"message": str(exc), "code": "analysis_running"})
     return _touched(sid, {**out, "session_id": sid})
 
-
 @app.delete("/api/papers")
 def clear_papers(confirm: Optional[bool] = None, sid: str = Depends(require_session)):
     """Delete every paper of THIS project and everything derived from it, and its conversation. The research
     question is kept. Refused (409 analysis_running) while a paper is being analyzed."""
     _require_confirm(confirm, "all papers")
     return _clear(sid, pipeline.clear_papers)
-
 
 @app.delete("/api/papers/{paper_id}")
 def remove_paper(paper_id: str, confirm: Optional[bool] = None, sid: str = Depends(require_session)):
@@ -456,38 +412,32 @@ def remove_paper(paper_id: str, confirm: Optional[bool] = None, sid: str = Depen
     except KeyError:
         raise HTTPException(404, "paper not found in this project")
 
-
 @app.delete("/api/chat/messages")
 def clear_chat(confirm: Optional[bool] = None, sid: str = Depends(require_session)):
     """Delete THIS project's conversation. Answers still being prepared are discarded, never saved."""
     _require_confirm(confirm, "the conversation")
     return _clear(sid, pipeline.clear_chat)
 
-
 # ---------- research assistant (chat) ----------
 class ChatContext(BaseModel):
     kind: str
     id: Optional[object] = None
-
 
 class ChatRequest(BaseModel):
     message: str
     context: Optional[ChatContext] = None
     session_id: Optional[str] = None  # optional echo; must equal the X-Session-Id header when given
 
-
 def _same_session(sid: str, claimed: Optional[str]) -> None:
     if claimed is not None and claimed != sid:
         raise HTTPException(422, {"message": "session_id does not match the X-Session-Id header.",
                                   "code": "session_mismatch"})
-
 
 @app.get("/api/chat/messages")
 def chat_messages(session_id: Optional[str] = None, sid: str = Depends(require_session)):
     """The session's stored conversation."""
     _same_session(sid, session_id)
     return {"session_id": sid, "messages": _in(sid, lambda: chat.history(sid))}
-
 
 @app.post("/api/chat")
 def ask_chat(req: ChatRequest, sid: str = Depends(require_session)):
@@ -497,10 +447,7 @@ def ask_chat(req: ChatRequest, sid: str = Depends(require_session)):
         question = _in(sid, pipeline.active_question)
     except pipeline.NoQuestionError as exc:
         raise HTTPException(409, str(exc))
-    try:
-        llm = get_llm()
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    llm = _require_llm()
     context: Optional[Dict] = req.context.model_dump() if req.context else None
     try:
         result = _guarded(sid, lambda: chat.ask(llm, question, req.message, context=context, session_id=sid),

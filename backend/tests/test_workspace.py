@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 import seed as seed_mod
 from app import db, pipeline
-from app import llm as llm_mod
 from app import main
 from app.config import settings
 
@@ -21,32 +20,22 @@ USER_Q = "Does spaced repetition improve vocabulary retention?"
 EXTRACT, PAIR, IMPACT = "You are extracting testable", "You are verifying the relationship", "added a NEW paper"
 QUIET = lambda *_: None  # noqa: E731
 
-
 @pytest.fixture
-def api(clean_db, monkeypatch):
-    monkeypatch.setattr(settings, "sim_threshold", 0.2)
-    pipeline._question_vecs.clear()
-    fake = FakeLLM()
-    llm_mod.set_llm(fake)
-    yield TestClient(main.app, headers=SESSION_HEADERS), fake
-    llm_mod.set_llm(None)
-
+def api(fake_llm):
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake_llm
 
 def upload(c, text, title, mode=None):
     data = {"title": title, **({"mode": mode} if mode else {})}
     return c.post("/api/papers", files={"file": ("p.pdf", pdf(text), "application/pdf")}, data=data)
-
 
 def build_library(c):
     out = [upload(c, text, title, mode="library") for title, text in PAPERS.values()]
     assert all(r.status_code == 200 for r in out), [r.text for r in out]
     return [r.json() for r in out]
 
-
 def counts():
     with db.connect() as conn:
         return db.analysis_counts(conn)
-
 
 # ---------- GET / PUT /api/workspace ----------
 def test_workspace_reports_stored_then_user_question(api):
@@ -59,7 +48,6 @@ def test_workspace_reports_stored_then_user_question(api):
     w = c.get("/api/workspace").json()
     assert w["source"] == "workspace" and not w["is_default"]
     assert c.get("/api/health").json()["question"] == USER_Q
-
 
 def test_no_question_anywhere(api, monkeypatch):
     c, _ = api
@@ -74,13 +62,11 @@ def test_no_question_anywhere(api, monkeypatch):
         assert r.status_code == 409 and "Set a research question first" in r.json()["detail"]
     assert counts()["papers"] == 0
 
-
 def test_question_validation(api):
     c, _ = api
     assert c.put("/api/workspace", json={"question": "   "}).status_code == 422
     assert c.put("/api/workspace", json={"question": "x" * 301}).status_code == 422
     assert c.put("/api/workspace", json={"question": "x" * 300}).status_code == 200
-
 
 def test_empty_graph_with_question(api):
     c, _ = api
@@ -88,7 +74,6 @@ def test_empty_graph_with_question(api):
     g = c.get("/api/graph").json()
     assert g["question"] == USER_Q and [n["data"]["type"] for n in g["nodes"]] == ["question"]
     assert g["relationships"] == {} and g["discovery"] is None
-
 
 # ---------- library and evaluate uploads ----------
 def test_library_uploads_build_graph_without_impacts(api):
@@ -107,14 +92,12 @@ def test_library_uploads_build_graph_without_impacts(api):
     assert c.get("/api/checks").json()["ok"] is True
     assert c.get("/api/workspace").json()["has_library"] is True
 
-
 def test_evaluate_without_library_rejected_and_nothing_stored(api):
     c, _ = api
     c.put("/api/workspace", json={"question": USER_Q})
     r = upload(c, PAPER_D[1], PAPER_D[0])  # default mode = evaluate
     assert r.status_code == 409 and "no evidence library" in r.json()["detail"]
     assert counts()["papers"] == 0
-
 
 def test_evaluate_after_library_produces_impacts(api):
     c, _ = api
@@ -128,18 +111,15 @@ def test_evaluate_after_library_produces_impacts(api):
     assert counts()["impacts"] == len(s["impacts"])
     assert c.get("/api/impact/latest").json()["paper"]["id"] == s["paper"]["id"]
 
-
 def test_default_mode_is_still_evaluate(api):
     c, _ = api
     build_library(c)
     s = upload(c, PAPER_D[1], PAPER_D[0]).json()
     assert s["mode"] == "evaluate" and "impacts" in s
 
-
 def test_invalid_mode(api):
     c, _ = api
     assert upload(c, PAPER_D[1], "x", mode="other").status_code == 422
-
 
 def test_user_question_reaches_every_gemini_prompt(api):
     c, fake = api
@@ -151,7 +131,6 @@ def test_user_question_reaches_every_gemini_prompt(api):
     for prompts in kinds.values():
         assert all(USER_Q in p for p in prompts)
         assert not any(DEFAULT_TEST_QUESTION in p for p in prompts)
-
 
 # ---------- changing the question ----------
 def test_changing_question_requires_reset(api):
@@ -177,7 +156,6 @@ def test_changing_question_requires_reset(api):
         assert db.cache_get(conn, "k") is not None  # discovery cache is question-independent; kept
         assert conn.execute("SELECT count(*) AS n FROM discovery_links").fetchone()["n"] == 0
 
-
 def test_same_question_never_deletes_even_with_reset(api):
     c, _ = api
     c.put("/api/workspace", json={"question": USER_Q})
@@ -188,7 +166,6 @@ def test_same_question_never_deletes_even_with_reset(api):
         assert r.status_code == 200 and r.json()["reset"] is False
         assert counts() == before
 
-
 def test_confirming_default_question_keeps_analysis(api):
     c, _ = api
     build_library(c)  # analysed under the .env default
@@ -196,7 +173,6 @@ def test_confirming_default_question_keeps_analysis(api):
     r = c.put("/api/workspace", json={"question": DEFAULT_TEST_QUESTION})
     assert r.status_code == 200 and not r.json()["reset"] and counts() == before
     assert c.get("/api/workspace").json()["source"] == "workspace"
-
 
 def test_reset_is_all_or_nothing(api, monkeypatch):
     c, _ = api
@@ -213,7 +189,6 @@ def test_reset_is_all_or_nothing(api, monkeypatch):
     with db.connect() as conn:
         assert db.get_question(conn) == USER_Q
 
-
 def test_schema_reinit_keeps_existing_data(api):
     c, _ = api
     c.put("/api/workspace", json={"question": USER_Q})
@@ -223,14 +198,12 @@ def test_schema_reinit_keeps_existing_data(api):
     db.init_schema()
     assert counts() == before and c.get("/api/workspace").json()["question"] == USER_Q
 
-
 def test_blank_pdf_in_library_mode(api):
     c, _ = api
     doc = fitz.open()
     doc.new_page()
     r = c.post("/api/papers", files={"file": ("s.pdf", doc.tobytes(), "application/pdf")}, data={"mode": "library"})
     assert r.status_code == 422 and counts()["papers"] == 0
-
 
 # ---------- seed.py ----------
 def test_seed_question_protection(clean_db, manifest):  # noqa: F811
@@ -250,7 +223,6 @@ def test_seed_question_protection(clean_db, manifest):  # noqa: F811
     with db.connect() as conn:
         assert db.get_question(conn) == "Another question?"
     assert counts()["library_papers"] == 3
-
 
 def test_seed_without_any_question_fails_clearly(clean_db, manifest, monkeypatch):  # noqa: F811
     monkeypatch.setattr(settings, "research_question", None)  # no .env default

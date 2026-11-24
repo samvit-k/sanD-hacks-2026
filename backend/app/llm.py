@@ -11,14 +11,11 @@ from .config import settings
 log = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
-
 MAX_QUOTA_WAIT_S = 60
 _RETRY_DELAY = re.compile(r"retryDelay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)s")
 
-
 class QuotaExhaustedError(RuntimeError):
     """Gemini quota exhausted with a retry delay too long to wait for."""
-
 
 def quota_retry_delay(exc: Exception) -> Optional[float]:
     """Seconds the API asks us to wait on a 429 quota error, or None if not a quota error / no delay given."""
@@ -28,14 +25,12 @@ def quota_retry_delay(exc: Exception) -> Optional[float]:
     m = _RETRY_DELAY.search(text)
     return float(m.group(1)) if m else None
 
-
 class LLM(Protocol):
     model_name: str
 
     def generate_json(self, prompt: str, model_cls: Type[T], temperature: Optional[float] = None) -> T: ...
 
     def embed(self, texts: List[str]) -> List[List[float]]: ...
-
 
 class GeminiLLM:
     def __init__(self) -> None:
@@ -110,16 +105,13 @@ class GeminiLLM:
             out.extend(list(e.values) for e in resp.embeddings)
         return out
 
-
 _llm: Optional[LLM] = None
-
 
 def get_llm() -> LLM:
     global _llm
     if _llm is None:
         _llm = GeminiLLM()
     return _llm
-
 
 def set_llm(llm: Optional[LLM]) -> None:
     global _llm

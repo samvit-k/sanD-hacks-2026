@@ -89,7 +89,6 @@ describe('App data provenance', () => {
   })
 })
 
-
 function deferred() {
   let resolve
   const promise = new Promise((res) => { resolve = res })

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { describeExtraction } from '../../graph/extraction.js'
 import { claimCounts } from '../../graph/toElements.js'
+import { plural } from '../../text.js'
 import ConfirmDialog from '../ConfirmDialog.jsx'
 
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
 const CLEAR_BLOCKED = 'Not available while papers are being uploaded or analyzed, or while offline.'
 
 // Left research workspace (BioOKF sidebar language): the central question (set / change through the

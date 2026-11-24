@@ -9,13 +9,11 @@ so unverified IDs can never reach the database or the frontend.
 """
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-
 def clean_id(raw: Optional[str]) -> str:
     """Tolerate formatting only (brackets, quotes, whitespace) — never fuzzy-match an ID."""
     if raw is None:
         return ""
     return str(raw).strip().strip("[]()\"'` ").strip()
-
 
 def _check(ids: Optional[Iterable[str]], allowed: Set[str], stored_paper: Dict[str, str]) -> Tuple[List[str], bool]:
     raw = list(ids or [])
@@ -32,13 +30,11 @@ def _check(ids: Optional[Iterable[str]], allowed: Set[str], stored_paper: Dict[s
             verified.append(sid)
     return verified, all_ok
 
-
 def validate_single_paper_citations(
     ids: Optional[Iterable[str]], paper_id: str, stored_paper: Dict[str, str]
 ) -> Tuple[List[str], bool]:
     """ok only if >= 1 ID was supplied and EVERY supplied ID exists and belongs to `paper_id`."""
     return _check(ids, {paper_id}, stored_paper)
-
 
 def validate_two_paper_citations(
     ids: Optional[Iterable[str]], paper_a: str, paper_b: str, stored_paper: Dict[str, str]

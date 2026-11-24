@@ -10,7 +10,6 @@ BACKEND = Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
 load_dotenv(ROOT / ".env")  # local development only; on Vercel the variables come from the project settings
 
-
 class Settings:
     def __init__(self) -> None:
         self.database_url = os.getenv("DATABASE_URL", "")
@@ -43,6 +42,5 @@ class Settings:
     @property
     def brightdata_configured(self) -> bool:
         return bool(self.brightdata_token and self.brightdata_dataset_id)
-
 
 settings = Settings()

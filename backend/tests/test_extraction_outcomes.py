@@ -7,10 +7,8 @@ from .test_workspace import api, upload  # noqa: F401  (fixture)
 
 STORED = {"pa:p1_s1": "pa", "pa:p1_s2": "pa", "pb:p1_s1": "pb"}
 
-
 def claim(text, ids):
     return ExtractedClaim(text=text, sentence_ids=ids, conditions=Conditions())
-
 
 # ---------- outcome classification ----------
 def test_no_candidates_is_reported_as_no_relevant_findings_with_the_models_note():
@@ -20,13 +18,11 @@ def test_no_candidates_is_reported_as_no_relevant_findings_with_the_models_note(
     assert report["outcome"] == extract.OUTCOME_NONE_RETURNED and report["returned"] == 0
     assert report["model_note"] == "The paper studies news recommendation, not GraphRAG."
 
-
 def test_candidates_that_all_fail_verification_are_reported_as_rejected_not_as_no_findings():
     raw = ExtractionResult(claims=[claim("A", ["pb:p1_s1"]), claim("B", ["pa:p9_s9"])])
     kept, report = extract.validate_claims(raw, "pa", STORED, 3)
     assert kept == [] and report["outcome"] == extract.OUTCOME_ALL_REJECTED
     assert report["returned"] == 2 and report["rejected_invalid_citations"] == 2
-
 
 def test_a_note_is_dropped_when_claims_were_kept_and_is_length_limited():
     raw = ExtractionResult(claims=[claim("Good.", ["pa:p1_s1"])], no_findings_note="Only one finding.")
@@ -35,11 +31,9 @@ def test_a_note_is_dropped_when_claims_were_kept_and_is_length_limited():
     _, report = extract.validate_claims(ExtractionResult(claims=[], no_findings_note="x " * 500), "pa", STORED, 3)
     assert len(report["model_note"]) <= extract.MAX_NOTE_LEN
 
-
 # ---------- persisted and shown, never evidence ----------
 UNRELATED = ("News recommendation study",
              "Abstract\nWe study click prediction for news articles.\nDiscussion\nClick models matter for platforms.")
-
 
 def test_zero_claim_upload_is_persisted_with_its_outcome_and_an_honest_warning(api):
     c, _ = api
@@ -56,12 +50,10 @@ def test_zero_claim_upload_is_persisted_with_its_outcome_and_an_honest_warning(a
     assert graph["claims"] == {} and graph["relationships"] == {}  # nothing is invented to fill the graph
     assert c.get("/api/checks").json()["ok"]
 
-
 def test_successful_extraction_records_claims_extracted(api):
     c, _ = api
     r = upload(c, "Abstract\nA trial.\nResults\nScores rose 25 percent after 12 weeks.\n", "Trial", mode="library")
     assert r.json()["extraction"]["outcome"] == "claims_extracted" and r.json()["warning"] is None
-
 
 # ---------- section detection ----------
 NRMS_LIKE = [
@@ -72,7 +64,6 @@ NRMS_LIKE = [
     "4 Conclusion\nThe approach works well.\nLimitations\nOnly one dataset was used.\n",
 ]
 
-
 def test_experiment_headings_map_to_results_and_table_headers_do_not_switch_sections():
     sents = {s["text"]: s["section"] for s in ingest.build_sentences("nrms", NRMS_LIKE)}
     assert sents["We used one month of logs."] == "methods"           # "Datasets and Experimental Settings"
@@ -82,7 +73,6 @@ def test_experiment_headings_map_to_results_and_table_headers_do_not_switch_sect
     assert sents["The approach works well."] == "conclusion"
     assert sents["Only one dataset was used."] == "limitations"         # unnumbered back matter still honoured
 
-
 # PyMuPDF's real layout for NRMS/MIND: the heading number on its own line, table cells one per line.
 SPLIT_LAYOUT = [
     "Abstract\nWe propose an approach.\n1\nIntroduction\nNews matters a lot.\n",
@@ -90,7 +80,6 @@ SPLIT_LAYOUT = [
     "Methods\nAUC\n0.56\nMethods\n59.93\n3602\nDataset\nThird, our approach performs better than all baselines.\n",
     "3603\nPage text continues here and is not a heading.\n4\nConclusion\nThe approach works well.\n",
 ]
-
 
 def test_split_heading_numbers_are_rejoined_and_subsections_return_to_their_parent():
     sents = {s["text"]: s["section"] for s in ingest.build_sentences("mind", SPLIT_LAYOUT)}
@@ -103,16 +92,13 @@ def test_split_heading_numbers_are_rejoined_and_subsections_return_to_their_pare
     assert any(t.startswith("Page text continues here") for t in sents)
     assert not any("Performance Comparison" in t or "Experimental Settings" in t for t in sents)
 
-
 def test_unnumbered_papers_keep_using_plain_headings():
     sents = {s["text"]: s["section"] for s in ingest.build_sentences("p", ["Methods\nWe ran a trial.\nResults\n"
                                                                             "Scores rose 25 percent.\n"])}
     assert sents["We ran a trial."] == "methods" and sents["Scores rose 25 percent."] == "results"
 
-
 # ---------- flattened tables ----------
 TABLE = "LibFM 0.5661 0.2414 0.2689 0.3552 DSSM 0.5949 0.2675 0.2881 0.3800 NRMS* 0.6275 0.2985 0.3217 0.4139"
-
 
 def test_flattened_tables_are_tagged_in_the_prompt_but_quoted_verbatim():
     assert extract.looks_like_table(TABLE)

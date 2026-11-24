@@ -24,7 +24,6 @@ PAPER_D = ("Retention of AI tutor gains",
            "Abstract\nWe followed tutored students for six months.\nResults\n"
            "Test score gains after 12 weeks of tutoring were not retained after 6 months.\n")
 
-
 def pdf(text):
     doc = fitz.open()
     doc.new_page().insert_textbox(fitz.Rect(50, 50, 550, 800), text, fontsize=10)
@@ -32,13 +31,11 @@ def pdf(text):
     doc.close()
     return data
 
-
 @pytest.fixture
 def setup(clean_db, monkeypatch):
     monkeypatch.setattr(settings, "sim_threshold", 0.2)  # bag-of-words fake embeddings are coarse
     monkeypatch.setattr(settings, "top_k", 2)
     pipeline._question_vecs.clear()
-
 
 def seed(llm):
     ids = []
@@ -48,7 +45,6 @@ def seed(llm):
         ids += claim_ids
     pipeline.compare_claims(llm, ids)
     return ids
-
 
 def test_seed_and_new_paper_end_to_end(setup):
     llm = FakeLLM()
@@ -81,7 +77,6 @@ def test_seed_and_new_paper_end_to_end(setup):
     assert {"question", "paper", "claim"} <= types
     assert len([n for n in g["nodes"] if n["data"]["type"] == "paper"]) == 4
 
-
 def test_fabricated_citations_become_insufficient_evidence(setup):
     llm = FakeLLM(fabricate=True)
     seed(llm)
@@ -94,14 +89,12 @@ def test_fabricated_citations_become_insufficient_evidence(setup):
     assert all(i["impact"] == "leaves_unresolved" and i["cited"] == [] for i in summary["impacts"])
     assert "Durations differ" not in str(summary)  # unsupported model text never shown
 
-
 def test_model_failure_is_recorded_as_unresolved(setup):
     llm = FakeLLM(fail_pairs=True)
     seed(llm)
     with db.connect() as conn:
         rels = db.all_relationships(conn)
     assert rels and all(r["label"] == "unresolved" and r["explanation"] == pipeline.FAILED_PAIR for r in rels)
-
 
 def test_reupload_is_rejected_unless_replace_is_explicit(setup):
     llm = FakeLLM()
@@ -117,7 +110,6 @@ def test_reupload_is_rejected_unless_replace_is_explicit(setup):
     with db.connect() as conn:
         assert len([p for p in db.all_papers(conn) if p["is_new"]]) == 1
 
-
 def test_blank_pdf_rejected_before_anything_is_stored(setup):
     blank = fitz.open()
     blank.new_page()
@@ -126,10 +118,8 @@ def test_blank_pdf_rejected_before_anything_is_stored(setup):
     with db.connect() as conn:
         assert db.all_papers(conn) == []
 
-
 def _refs(graph):
     return {n["data"]["id"]: n["data"]["ref"] for n in graph["nodes"] if n["data"]["type"] in ("paper", "claim")}
-
 
 def test_node_numbers_are_stable_and_append_only(setup):
     llm = FakeLLM()

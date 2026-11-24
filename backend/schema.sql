@@ -101,14 +101,14 @@ CREATE TABLE IF NOT EXISTS impacts (
 
 -- Stable display numbers for graph nodes ("Node N"). Append-only: a number is assigned once, the
 -- first time a node appears in the graph, and is never reassigned or reused (new papers/claims get
--- the next number). Cleared only by an explicit reset. Becomes per-session with the session backend.
+-- the next number). Cleared only by an explicit reset (clear all papers, or a question reset).
 CREATE TABLE IF NOT EXISTS node_refs (
     node_id text PRIMARY KEY,      -- graph node id, e.g. 'paper:<id>' or 'claim:<id>'
     num     serial UNIQUE
 );
 
--- Research-assistant conversation. `session_id` scopes every read and write so separate research
--- sessions (Stage D) can share this table or move into per-session schemas without code changes.
+-- Research-assistant conversation. The table lives in the project's own schema, so every row belongs to that
+-- project; `session_id` is a label only (rows migrated from the single-workspace layout carry 'default').
 -- Only verified sentence IDs are stored in `cited_sentence_ids`; quotes are rebuilt from `sentences`.
 CREATE TABLE IF NOT EXISTS chat_messages (
     id                    serial PRIMARY KEY,

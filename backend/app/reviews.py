@@ -24,13 +24,11 @@ TARGETS = {
               "FROM impacts WHERE id = %s",
 }
 
-
 def target_fingerprint(kind: str, row: Dict, claim_texts: Dict[int, str]) -> str:
     payload = {"kind": kind, "claims": [row["c1"], row["c2"]],
                "claim_texts": [claim_texts.get(row["c1"]), claim_texts.get(row["c2"])],
                "label": row["label"], "cited_sentence_ids": list(row["cited_sentence_ids"] or [])}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-
 
 def verify_target(conn, p: Dict) -> Tuple[Optional[Dict], Optional[str], List[str]]:
     """(row, fingerprint, problems). Any problem means the proposal does not match the stored target."""
@@ -60,10 +58,8 @@ def verify_target(conn, p: Dict) -> Tuple[Optional[Dict], Optional[str], List[st
         problems.append("reason is required")
     return row, fp, problems
 
-
 def _key(kind, target_id, proposed, reason, fp) -> Tuple:
     return (kind, target_id, proposed, reason, fp)
-
 
 def record_proposals(conn, proposals: List[Dict], reviewer_type: str, reviewer: str, apply: bool) -> Dict:
     """Verify every proposal first; write nothing if any target does not match. Returns a report."""

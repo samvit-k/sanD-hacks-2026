@@ -3,7 +3,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import chat, db, main, pipeline
-from app import llm as llm_mod
 from app.config import settings
 from app.contracts import ChatAnswer
 
@@ -17,11 +16,9 @@ SHOWN = {
 }
 TOKENS = {"q", "paper:paper-a", "paper:paper-b", "claim:1", "claim:2", "rel:1"}
 
-
 def check(answer, cited=(), insufficient=False):
     return chat.validate_answer(ChatAnswer(answer=answer, cited_sentence_ids=list(cited),
                                            insufficient_evidence=insufficient), SHOWN, TOKENS)
-
 
 # ---------- citations required for research statements ----------
 @pytest.mark.parametrize("answer", [
@@ -40,7 +37,6 @@ def test_research_statements_without_citations_are_withheld(answer):
     assert out["guardrail"] == chat.GUARDRAIL_UNCITED
     assert out["cited_sentence_ids"] == [] and answer not in out["content"]
 
-
 @pytest.mark.parametrize("answer", [
     "Personalized tutoring benefits students.",
     "Personalized tutoring benefits students, but there is insufficient evidence about retention.",
@@ -48,13 +44,11 @@ def test_research_statements_without_citations_are_withheld(answer):
 def test_insufficient_flag_cannot_exempt_research_statements(answer):
     assert check(answer, insufficient=True)["guardrail"] == chat.GUARDRAIL_UNCITED
 
-
 def test_cited_answer_passes():
     out = check("[[claim:1]] reports a 25 percent gain after 12 weeks, while [[claim:2]] found no significant "
                 "change after 2 weeks.", cited=["paper-a:p1_s3", "paper-b:p1_s3"])
     assert out["guardrail"] is None
     assert out["cited_sentence_ids"] == ["paper-a:p1_s3", "paper-b:p1_s3"]
-
 
 @pytest.mark.parametrize("answer", [
     "There is insufficient evidence to answer that question.",
@@ -66,7 +60,6 @@ def test_insufficient_evidence_reply_may_be_citation_free(answer):
     out = check(answer, insufficient=True)
     assert out["guardrail"] is None and out["content"] == answer and out["insufficient_evidence"] is True
 
-
 @pytest.mark.parametrize("answer", [
     "Hello! How can I help?",
     "I can help you inspect Node 7.",
@@ -77,16 +70,13 @@ def test_insufficient_evidence_reply_may_be_citation_free(answer):
 def test_conversational_replies_are_not_rejected(answer):
     assert check(answer)["guardrail"] is None
 
-
 def test_invalid_citation_id_withholds_answer():
     out = check("[[claim:1]] reports a gain.", cited=["paper-a:p1_s3", "paper-a:p9_s9"])
     assert out["guardrail"] == chat.GUARDRAIL_CITATIONS and out["cited_sentence_ids"] == []
 
-
 def test_invented_graph_reference_withholds_answer():
     assert check("[[claim:99]] reports a gain.", cited=["paper-a:p1_s3"])["guardrail"] == chat.GUARDRAIL_REFERENCES
     assert check("[[claim:one]] reports a gain.", cited=["paper-a:p1_s3"])["guardrail"] == chat.GUARDRAIL_REFERENCES
-
 
 def test_inline_sentence_ids_are_validated_cited_and_removed_from_the_text():
     out = check("[[claim:1]] reports a 25 percent gain [paper-a:p1_s3], unlike [[claim:2]] (paper-b:p1_s3).")
@@ -96,37 +86,27 @@ def test_inline_sentence_ids_are_validated_cited_and_removed_from_the_text():
     bad = check("[[claim:1]] reports a gain [paper-a:p9_s9].", cited=["paper-a:p1_s3"])
     assert bad["guardrail"] == chat.GUARDRAIL_CITATIONS
 
-
 # ---------- direct quotations ----------
 def test_invented_direct_quotation_is_withheld_even_with_valid_citations():
     out = check('The paper states "tutoring doubled long-term retention for all pupils".', cited=["paper-a:p1_s3"])
     assert out["guardrail"] == chat.GUARDRAIL_QUOTE
     assert "doubled" not in out["content"]
 
-
 def test_verbatim_quotation_is_supported_and_cited():
     out = check('[[claim:1]] is based on the sentence “test scores rose 25 percent after 12 weeks”.')
     assert out["guardrail"] is None
     assert out["cited_sentence_ids"] == ["paper-a:p1_s3"]  # the quoted sentence itself
 
-
 def test_short_quoted_terms_are_ordinary_language():
     out = check('This pair is labelled "apparent contradiction" by the model.', cited=["paper-a:p1_s3"])
     assert out["guardrail"] is None
 
-
 # ---------- end to end ----------
 @pytest.fixture
-def client(clean_db, monkeypatch):
-    monkeypatch.setattr(settings, "sim_threshold", 0.2)
-    pipeline._question_vecs.clear()
-    fake = FakeLLM()
-    llm_mod.set_llm(fake)
-    seed(fake)
+def client(fake_llm):
+    seed(fake_llm)
     pipeline.graph_payload()  # assigns node numbers, as the UI would
-    yield TestClient(main.app, headers=SESSION_HEADERS), fake
-    llm_mod.set_llm(None)
-
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake_llm
 
 def test_chat_answer_is_grounded_stored_and_resolves_references(client):
     c, fake = client
@@ -145,7 +125,6 @@ def test_chat_answer_is_grounded_stored_and_resolves_references(client):
     assert [m["role"] for m in hist] == ["user", "assistant"]
     assert hist[1]["cited"] == bot["cited"]
 
-
 def test_context_and_node_mentions_are_retrieved(client):
     c, fake = client
     g = c.get("/api/graph").json()
@@ -158,7 +137,6 @@ def test_context_and_node_mentions_are_retrieved(client):
     c.post("/api/chat", json={"message": f"What does Node {refs[claim_node]} say?"})
     assert f"[[{claim_node}]]" in fake.prompts[-1].split("ITEMS THE USER SELECTED", 1)[1]
 
-
 def test_withheld_answer_is_stored_without_citations(client):
     c, fake = client
     fake.chat_answer = ChatAnswer(answer="Personalized tutoring benefits students.", cited_sentence_ids=[],
@@ -166,7 +144,6 @@ def test_withheld_answer_is_stored_without_citations(client):
     bot = c.post("/api/chat", json={"message": "Does tutoring help?"}).json()["assistant"]
     assert bot["guardrail"] == chat.GUARDRAIL_UNCITED and bot["cited"] == []
     assert "benefits students" not in bot["content"]
-
 
 def test_session_id_echo_must_match_the_header(client):
     """Isolation itself is per session schema (tests/test_sessions.py); a body/query session_id is only an echo."""
@@ -176,14 +153,12 @@ def test_session_id_echo_must_match_the_header(client):
     assert c.post("/api/chat", json={"message": "Do tutors help?", "session_id": SESSION_HEADERS["X-Session-Id"]}).status_code == 200
     assert len(c.get("/api/chat/messages").json()["messages"]) == 2
 
-
 def test_model_outage_stores_nothing(client):
     c, fake = client
     fake.fail_chat = True
     r = c.post("/api/chat", json={"message": "Do tutors help?"})
     assert r.status_code == 503 and "not saved" in r.json()["detail"]
     assert c.get("/api/chat/messages").json()["messages"] == []
-
 
 def test_chat_requires_question_and_valid_input(client, monkeypatch):
     c, _ = client
@@ -194,14 +169,12 @@ def test_chat_requires_question_and_valid_input(client, monkeypatch):
     monkeypatch.setattr(settings, "research_question", None)
     assert c.post("/api/chat", json={"message": "Do tutors help?"}).status_code == 409
 
-
 def test_reset_clears_the_conversation(client):
     c, _ = client
     c.post("/api/chat", json={"message": "Do tutors help?"})
     with db.connect() as conn:
         db.delete_all(conn)
     assert c.get("/api/chat/messages").json()["messages"] == []
-
 
 # ---------- duplicate uploads ----------
 def _snapshot():
@@ -215,7 +188,6 @@ def _snapshot():
             "impacts": conn.execute("SELECT count(*) AS n FROM impacts").fetchone()["n"],
             "sentences": conn.execute("SELECT count(*) AS n FROM sentences").fetchone()["n"],
         }
-
 
 def test_duplicate_pdf_is_rejected_and_leaves_the_database_unchanged(client):
     c, fake = client
@@ -237,7 +209,6 @@ def test_duplicate_pdf_is_rejected_and_leaves_the_database_unchanged(client):
     assert before["papers"][paper_id][:2] == ("Original title", False)  # metadata and is_new untouched
     assert len(fake.prompts) == calls                   # no model calls were made
 
-
 # ---------- upload reconciliation (timeout / network recovery) ----------
 def test_lookup_identifies_the_exact_pdf_and_its_analysis_status(client):
     import hashlib
@@ -253,7 +224,6 @@ def test_lookup_identifies_the_exact_pdf_and_its_analysis_status(client):
     found = c.get("/api/papers/lookup", params={"sha256": digest}).json()
     assert found["found"] is True and found["status"] == "complete" and found["paper"]["id"] == r.json()["paper"]["id"]
     assert c.get("/api/papers/lookup", params={"sha256": "nothex"}).status_code == 422
-
 
 def test_upload_is_marked_processing_until_analysis_finishes(client, monkeypatch):
     import hashlib

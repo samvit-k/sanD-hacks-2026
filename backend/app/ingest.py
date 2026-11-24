@@ -13,10 +13,8 @@ from typing import Dict, List
 
 import fitz  # PyMuPDF
 
-
 class NoExtractableTextError(ValueError):
     """Raised when a PDF yields no usable text (e.g. a scanned image without OCR)."""
-
 
 NO_TEXT_MESSAGE = (
     "No extractable text found in this PDF. It may be a scanned image (OCR is not supported "
@@ -45,26 +43,21 @@ _ABBREV_END = re.compile(
 _HAS_WORD = re.compile(r"[A-Za-z]{2,}")
 _PAPER_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-
 def sentence_id(paper_id: str, page: int, idx: int) -> str:
     return f"{paper_id}:p{page}_s{idx}"
-
 
 def slugify(text: str, max_len: int = 40) -> str:
     s = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     return (s[:max_len].strip("-")) or "paper"
 
-
 def check_paper_id(paper_id: str) -> str:
     if not _PAPER_ID.match(paper_id):
         raise ValueError(f"paper_id must match [a-z0-9][a-z0-9-]*, got {paper_id!r}")
     return paper_id
 
-
 def is_noise_line(line: str) -> bool:
     return any(p.match(line) for p in _NOISE_LINE)
-
 
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)  # ligatures (ﬁ -> fi), full-width chars
@@ -72,7 +65,6 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)  # de-hyphenate line breaks
     text = re.sub(r"\s+", " ", text)
     return text.strip()
-
 
 def split_sentences(text: str) -> List[str]:
     """Split text into sentences. Removes heading/noise lines; keeps short sentences."""
@@ -85,7 +77,6 @@ def split_sentences(text: str) -> List[str]:
         else:
             merged.append(part)
     return [s for s in merged if _HAS_WORD.search(s)]  # drop fragments with no words ("12", "—")
-
 
 # ---------- block-aware extraction (ingest_version 2; new uploads only) ----------
 INGEST_VERSION = 2
@@ -102,16 +93,13 @@ SMALL_FONT_DELTA = 0.6      # points below the body font size that mark non-body
 FOOTNOTE_ZONE = 0.65        # footnotes start in the bottom 35% of the page
 MIN_TABLE_TOKENS = 6
 
-
 def _block_text(block: Dict) -> str:
     return "\n".join("".join(s["text"] for s in line["spans"]) for line in block.get("lines", [])).strip()
-
 
 def _block_font(block: Dict) -> float:
     spans = [s for line in block.get("lines", []) for s in line["spans"] if s["text"].strip()]
     chars = sum(len(s["text"].strip()) for s in spans)
     return sum(s["size"] * len(s["text"].strip()) for s in spans) / chars if chars else 0.0
-
 
 def classify_block(text: str, font: float, body_font: float, top: float, page_height: float) -> str:
     """body | caption | table | footnote, from position, font size and content (conservative: body by default)."""
@@ -128,7 +116,6 @@ def classify_block(text: str, font: float, body_font: float, top: float, page_he
     if numeric >= 0.5 and len(tokens) >= MIN_TABLE_TOKENS:
         return TABLE
     return BODY
-
 
 def extract_page_blocks(pdf_bytes: bytes) -> List[List[Dict]]:
     """Per page, the text blocks in PDF order, each {"kind", "text"}; stops at a References heading.
@@ -171,10 +158,8 @@ def extract_page_blocks(pdf_bytes: bytes) -> List[List[Dict]]:
         raise NoExtractableTextError(NO_TEXT_MESSAGE)
     return pages
 
-
 def _clean_block(text: str) -> str:
     return normalize_text("\n".join(ln for ln in text.splitlines() if not is_noise_line(ln)))
-
 
 def extract_pages(pdf_bytes: bytes) -> List[str]:
     """Return text per page (1-based order), stopping at a References/Bibliography heading."""
@@ -199,7 +184,6 @@ def extract_pages(pdf_bytes: bytes) -> List[str]:
         raise NoExtractableTextError(NO_TEXT_MESSAGE)
     return pages
 
-
 _SECTION_CANON = [
     # Setup-style experiment headings are methods ("3.1 Datasets and Experimental Settings") — checked first.
     (re.compile(r"\b(experimental (settings?|setup)|settings?|setup|datasets?|implementation( details)?)\b", re.I),
@@ -215,13 +199,11 @@ _SECTION_CANON = [
     (re.compile(r"\b(acknowledge?ments?|funding|appendix)\b", re.I), "other"),
 ]
 
-
 _NUMBERED = re.compile(r"^\s*\d+(\.\d+)*\.?\s+\S")
 # A section number alone on a line: "3", "5.2", "5.3.1". Not table values ("0.518", "59.93") or page numbers ("3602").
 _SECTION_NUMBER = re.compile(r"^\s*[1-9]\d?(\.\d){0,3}\.?\s*$")
 _SUBSECTION = re.compile(r"^\s*[1-9]\d?(\.\d){1,3}\.?\s+[A-Z]")  # "5.2 Performance Comparison"
 MAX_HEADING_WORDS = 6
-
 
 def _join_split_headings(lines: List[str]) -> List[str]:
     """PyMuPDF often puts a heading's number on its own line ("3" / "Experiments"). Rejoin them ("3 Experiments")
@@ -242,10 +224,8 @@ def _join_split_headings(lines: List[str]) -> List[str]:
         i += 1
     return out
 
-
 def _is_subsection_heading(line: str) -> bool:
     return bool(_SUBSECTION.match(line) and _NOISE_LINE[1].match(line))
-
 
 # Keyword-less numbered top-level headings ("2 Our Approach") — block-aware extraction only. Accepted only when the
 # PDF block holds nothing but the number and a short title-like line, AND the number is exactly the previous
@@ -258,7 +238,6 @@ _TOP_NUMBER = re.compile(r"^\s*([1-9]\d?)\.?\s*$")
 _SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "vs", "via",
                 "with"}
 
-
 def _title_like(text: str) -> bool:
     words = text.split()
     if not 1 <= len(words) <= MAX_HEADING_WORDS or text.rstrip()[-1:] in ".:;,!?" or not words[0][:1].isupper():
@@ -266,7 +245,6 @@ def _title_like(text: str) -> bool:
     if not any(re.match(r"^[A-Za-z]{3,}", w) for w in words):
         return False
     return all(w[:1].isupper() or w.lower() in _SMALL_WORDS or not w[:1].isalpha() for w in words)
-
 
 def standalone_top_heading(block_text: str, last_top: int):
     """(number, heading) if a body block is only a sequential top-level heading, else None."""
@@ -279,12 +257,10 @@ def standalone_top_heading(block_text: str, last_top: int):
         return None
     return int(m.group(1)), title
 
-
 # Unnumbered headings still honoured after numbered ones appear (front/back matter of e.g. ACL papers).
 # ("Abstract" is not among them: an abstract always precedes the numbered sections, so a later bare "Abstract" is a
 # label inside a figure or table, e.g. MIND's example news article.)
 _UNNUMBERED_OK = {"limitations", "other"}
-
 
 def heading_section(line: str):
     """Canonical section name if `line` is a section heading, else None."""
@@ -294,7 +270,6 @@ def heading_section(line: str):
         if pattern.search(line):
             return name
     return None  # a sub-heading like "3.1 Study design": keep the current section
-
 
 def build_sentences(paper_id: str, pages: List) -> List[Dict]:
     """Sentences with IDs, page numbers and the section they appear in ('front' before any heading).
@@ -377,15 +352,12 @@ def build_sentences(paper_id: str, pages: List) -> List[Dict]:
         raise NoExtractableTextError(NO_TEXT_MESSAGE)
     return out
 
-
 _JUNK_META_TITLE = re.compile(
     r"^(arxiv:|microsoft word|untitled|document\d*$|paper\d*$)|\.(pdf|docx?|tex|dvi)$|^[\w-]+$", re.I)
-
 
 def _usable_meta_title(title: str) -> bool:
     t = " ".join((title or "").split())
     return len(t.split()) >= 3 and not _JUNK_META_TITLE.search(t)
-
 
 def _title_from_layout(page) -> str:
     """Largest-font horizontal text in the top part of page 1, joined across wrapped lines."""
@@ -413,7 +385,6 @@ def _title_from_layout(page) -> str:
     title = normalize_text(" ".join(title_lines))
     return title[:300] if len(title.split()) >= 2 else ""
 
-
 def guess_title(pdf_bytes: bytes) -> str:
     """Paper title: PDF metadata if it looks like a real title, else the large-font title block on page 1."""
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
@@ -429,14 +400,12 @@ def guess_title(pdf_bytes: bytes) -> str:
                     return line.strip()
     return "Untitled paper"
 
-
 # ---------- display-only quality flags for stored quotations ----------
 _ABBREV_WORDS = {"e.g", "i.e", "etc", "al", "vs", "cf", "fig", "eq", "resp", "approx"}
 _CAPTION_INSIDE = re.compile(r"\S.*?\b(Table|Figure|Fig\.)\s*\d+\s*:")
 _FOOTNOTE_GLUED = re.compile(r"[a-z]\d{1,2}[A-Z][a-z]")
 _FRAGMENT_AFTER_PERIOD = re.compile(r"(\S+)\.\s+([a-z]{2,6})\s")
 _NUM = re.compile(r"^\d+(\.\d+)?%?$")
-
 
 def layout_artifacts(text: str) -> List[str]:
     """Signs that a stored sentence was assembled across PDF layout elements. Used only to show "verify on the

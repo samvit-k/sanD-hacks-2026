@@ -101,17 +101,14 @@ _NON_ASSERTIVE_TEMPLATES = [re.compile(p) for p in (
     rf"(?: (?:from|with|using|in) (?:the|your) (?:available |stored )?(?:evidence|papers|library|graph|sources))?",
 )]
 
-
 def _clause_form(clause: str) -> str:
     c = unicodedata.normalize("NFKC", clause).lower().replace("’", "'")
     c = re.sub(r"\s+", " ", c)
     return c.strip(" .!\"'“”()")
 
-
 def is_non_assertive(clause: str) -> bool:
     form = _clause_form(clause)
     return any(t.fullmatch(form) for t in _NON_ASSERTIVE_TEMPLATES)
-
 
 GUARDRAIL_CITATIONS = "invalid_citations"
 GUARDRAIL_REFERENCES = "invalid_references"
@@ -133,17 +130,14 @@ WITHHELD = {
 WITHHELD_HINT = " Try rephrasing, or ask about a specific node or connection."
 CONTEXT_KINDS = ("question", "paper", "claim", "relationship")
 
-
 class ChatUnavailableError(RuntimeError):
     """Gemini failed while answering; nothing was stored."""
-
 
 def check_session(session_id: Optional[str]) -> str:
     sid = (session_id or DEFAULT_SESSION).strip()
     if not SESSION_RE.match(sid):
         raise ValueError("session_id must match [a-z0-9][a-z0-9-]{0,39}")
     return sid
-
 
 def check_message(message: str) -> str:
     text = (message or "").strip()
@@ -152,7 +146,6 @@ def check_message(message: str) -> str:
     if len(text) > MAX_MESSAGE_LEN:
         raise ValueError(f"The message must be at most {MAX_MESSAGE_LEN} characters.")
     return text
-
 
 def check_context(context: Optional[Dict]) -> Optional[Dict]:
     if not context:
@@ -171,7 +164,6 @@ def check_context(context: Optional[Dict]) -> Optional[Dict]:
         cid = "q"
     return {"kind": kind, "id": cid}
 
-
 def ensure_context_exists(conn, context: Optional[Dict]) -> None:
     """The attached graph item must exist in THIS session (the connection is session-scoped). An id from another
     session — or a deleted item — is rejected instead of being silently ignored."""
@@ -180,7 +172,6 @@ def ensure_context_exists(conn, context: Optional[Dict]) -> None:
     table = {"claim": "claims", "relationship": "relationships", "paper": "papers"}[context["kind"]]
     if not conn.execute(f"SELECT 1 FROM {table} WHERE id = %s", (context["id"],)).fetchone():
         raise ValueError(f"The attached {context['kind']} does not exist in this research session.")
-
 
 def mentioned_numbers(text: str) -> List[int]:
     """'Why do Nodes 4 and 7 disagree?' -> [4, 7]"""
@@ -191,14 +182,12 @@ def mentioned_numbers(text: str) -> List[int]:
                 out.append(int(n))
     return out
 
-
 def _unique(xs: Iterable) -> List:
     out = []
     for x in xs:
         if x not in out:
             out.append(x)
     return out
-
 
 # ---------- retrieval ----------
 def gather_context(conn, llm: LLM, message: str, context: Optional[Dict]) -> Dict:
@@ -275,7 +264,6 @@ def gather_context(conn, llm: LLM, message: str, context: Optional[Dict]) -> Dic
         "focus_rels": focus_rels, "focus_claims": [c for c in focus if c in claim_rows], "focus_papers": focus_papers,
     }
 
-
 # ---------- prompt ----------
 RULES = """You are the SpiderMonkey research assistant. Answer the user's question using ONLY the evidence below.
 Rules:
@@ -289,7 +277,6 @@ Rules:
 - Independence: never describe evidence as independent, or as independent confirmation, corroboration or replication — this library cannot establish independence. When two papers SHARE AUTHORS (listed below), any statement that one supports, confirms or strengthens the other must say that they share authors, so it is supporting evidence from related work, not independent corroboration. Shared authorship does not by itself mean the same data or experiments.
 - Relate the answer to the central research question when relevant. Be concise (at most 180 words), plain prose, no headings."""
 
-
 def _pair_note(ctx: Dict, claim_a: int, claim_b: int) -> Optional[str]:
     if not ctx.get("authors"):
         return None
@@ -297,7 +284,6 @@ def _pair_note(ctx: Dict, claim_a: int, claim_b: int) -> Optional[str]:
     if claim_a not in cp or claim_b not in cp:
         return None
     return ctx["authors"].pair(cp[claim_a], cp[claim_b])["summary"]
-
 
 def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict]) -> Tuple[str, Dict[str, str], Set[str]]:
     """Returns (prompt, {shown sentence id: text}, allowed tokens)."""
@@ -374,7 +360,6 @@ def build_chat_prompt(question: str, message: str, ctx: Dict, history: List[Dict
     lines += ["", f"USER QUESTION: {message}"]
     return "\n".join(lines), shown, tokens
 
-
 # ---------- validation ----------
 def _norm(text: str) -> str:
     """Comparison form for quotations: Unicode-normalized, case- and whitespace-insensitive,
@@ -384,13 +369,11 @@ def _norm(text: str) -> str:
     t = re.sub(r"\s+", " ", t)
     return t.strip(" .,;:!?'\"()[]…")
 
-
 def quoted_spans(answer: str) -> List[str]:
     """Spans presented as direct quotations: double-quoted text of MIN_QUOTE_WORDS+ words.
     Shorter quoted terms ("Node 3", "apparent contradiction") are ordinary language."""
     without_tokens = ANY_TOKEN_RE.sub(" ", answer or "")
     return [m.strip() for m in QUOTE_RE.findall(without_tokens) if len(m.split()) >= MIN_QUOTE_WORDS]
-
 
 def match_quotation(span: str, shown: Dict[str, str]) -> Optional[str]:
     """ID of the shown source sentence containing `span` verbatim (modulo case/whitespace), else None."""
@@ -401,7 +384,6 @@ def match_quotation(span: str, shown: Dict[str, str]) -> Optional[str]:
         if needle in _norm(text):
             return sid
     return None
-
 
 def assertive_clauses(answer: str) -> List[str]:
     """Clauses that must be backed by a citation. A sentence that is a question is exempt; otherwise
@@ -417,13 +399,11 @@ def assertive_clauses(answer: str) -> List[str]:
                 out.append(clause.strip())
     return out
 
-
 def strip_inline_citations(text: str) -> str:
     """Remove sentence IDs from prose (and the space before them), keeping punctuation tidy."""
     out = INLINE_CITE_RE.sub("", text or "")
     out = re.sub(r"\s+([.,;:!?])", r"\1", out)
     return re.sub(r"[ \t]{2,}", " ", out).strip()
-
 
 # --- independence language ---------------------------------------------------------------------------------
 # Words that present one finding as backing another. Between papers that share authors they must come with an
@@ -438,7 +418,6 @@ NEGATED_AFTER_RE = re.compile(r"^[^.;!?]{0,25}\b(not established|unverified|unkn
                               re.I)
 AUTHOR_MENTION_RE = re.compile(r"\b(co-?)?authors?(hip)?\b|\bsame (?:research )?(?:group|team|lab)\b", re.I)
 
-
 def referenced_papers(content: str, claim_paper: Dict[int, str], rel_claims: Dict[int, Tuple[int, int]]) -> Set[str]:
     out: Set[str] = set()
     for tok in TOKEN_RE.findall(content or ""):
@@ -450,7 +429,6 @@ def referenced_papers(content: str, claim_paper: Dict[int, str], rel_claims: Dic
         elif kind == "rel" and int(ident) in rel_claims:
             out.update(claim_paper[c] for c in rel_claims[int(ident)] if c in claim_paper)
     return out
-
 
 def independence_issues(content: str, papers: Set[str], authors: Optional[AuthorIndex]) -> List[Dict]:
     """Deterministic check of an answer's independence language. Returns one issue per problem found."""
@@ -473,11 +451,9 @@ def independence_issues(content: str, papers: Set[str], authors: Optional[Author
                                "detail": pair["summary"]})
     return issues
 
-
 def _withheld(reason: str) -> Dict:
     return {"content": WITHHELD[reason] + WITHHELD_HINT, "cited_sentence_ids": [], "insufficient_evidence": True,
             "guardrail": reason}
-
 
 def validate_answer(ans: ChatAnswer, shown: Dict[str, str], tokens: Set[str],
                     independence: Optional[Callable[[str], List[Dict]]] = None) -> Dict:
@@ -519,7 +495,6 @@ def validate_answer(ans: ChatAnswer, shown: Dict[str, str], tokens: Set[str],
     return {"content": answer or "No answer was returned.", "cited_sentence_ids": verified,
             "insufficient_evidence": bool(ans.insufficient_evidence), "guardrail": None}
 
-
 # ---------- payloads ----------
 def resolve_references(content: str, node_refs: Dict[str, int], rels: Dict[int, Dict], paper_ids: Set[str]) -> Dict:
     out: Dict[str, Dict] = {}
@@ -540,7 +515,6 @@ def resolve_references(content: str, node_refs: Dict[str, int], rels: Dict[int, 
             out[tok] = {"kind": "relationship", "id": rid, "node_id": tok, "missing": r is None,
                         "refs": [node_refs.get(f"claim:{r['claim_a']}"), node_refs.get(f"claim:{r['claim_b']}")] if r else None}
     return out
-
 
 def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
     """API shape for stored messages. Quotes are rebuilt from `sentences`; references from `node_refs`."""
@@ -576,7 +550,6 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
         })
     return out
 
-
 def _integrity(m: Dict, authors: Optional[AuthorIndex], claim_paper: Dict, rel_claims: Dict) -> Optional[Dict]:
     """Re-checks a STORED answer against today's author information. The stored text is never edited; a problem
     is reported as a prominent status shown before the answer."""
@@ -590,13 +563,11 @@ def _integrity(m: Dict, authors: Optional[AuthorIndex], claim_paper: Dict, rel_c
             "issues": issues,
             "note": "Checked by SpiderMonkey when displayed; the answer text below is unchanged."}
 
-
 # ---------- public API ----------
 def history(session_id: Optional[str] = None) -> List[Dict]:
     sid = check_session(session_id)
     with db.connect() as conn:
         return message_payloads(conn, db.chat_messages(conn, sid))
-
 
 def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
         session_id: Optional[str] = None) -> Dict:

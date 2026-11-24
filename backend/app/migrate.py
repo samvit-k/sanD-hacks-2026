@@ -47,21 +47,17 @@ log = logging.getLogger(__name__)
 
 LOCK_TIMEOUT = "15s"
 
-
 class MigrationError(RuntimeError):
     """Refused or failed; the transaction was rolled back and nothing changed."""
 
-
 class BackupError(RuntimeError):
     """The backup could not be created or verified; the migration must not run."""
-
 
 # ---------- inspection ----------
 def table_columns(conn, schema: str, table: str) -> List[str]:
     rows = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s "
                         "ORDER BY ordinal_position", (schema, table)).fetchall()
     return [r["column_name"] for r in rows]
-
 
 def table_fingerprint(conn, schema: str, table: str, columns: Optional[List[str]] = None) -> Dict:
     """Row count + md5 over every row. With `columns`, only those columns are hashed (in that order), so a
@@ -77,11 +73,9 @@ def table_fingerprint(conn, schema: str, table: str, columns: Optional[List[str]
     row = conn.execute(q).fetchone()
     return {"rows": int(row["n"]), "md5": row["h"]}
 
-
 def _tables_in(conn, schema: str) -> List[str]:
     rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = %s", (schema,)).fetchall()
     return sorted(r["table_name"] for r in rows)
-
 
 def inspect_layout(conn) -> Dict:
     """Classify the database. state ∈ fresh | legacy | migrated | inconsistent (with `problems`)."""
@@ -119,7 +113,6 @@ def inspect_layout(conn) -> Dict:
     return {"state": state, "problems": problems, "legacy_tables": legacy, "has_registry": has_registry,
             "sessions": [s["id"] for s in sessions]}
 
-
 def _usable(conn, schema: str) -> Dict:
     """Read the session through the normal session-scoped queries (same connection/transaction)."""
     conn.execute(sql.SQL("SET LOCAL search_path TO {}, public").format(sql.Identifier(schema)))
@@ -132,10 +125,8 @@ def _usable(conn, schema: str) -> Dict:
     conn.execute("SET LOCAL search_path TO public")
     return counts
 
-
 def _connect(url: Optional[str] = None):
     return psycopg.connect(url or db._url(), row_factory=dict_row)
-
 
 # ---------- migration ----------
 def migrate_legacy(title: Optional[str] = None, dry_run: bool = False,
@@ -199,7 +190,6 @@ def migrate_legacy(title: Optional[str] = None, dry_run: bool = False,
     return {"migrated": True, "state": "migrated", "session_id": sid, "schema": schema, "question": question,
             "tables": after, "verified_identical": True, "counts": counts}
 
-
 # ---------- backup ----------
 def _pg_tool(name: str) -> str:
     """pg_dump / pg_restore: RL_PG_BIN dir, else the binaries bundled with pgserver (local dev), else PATH."""
@@ -219,13 +209,11 @@ def _pg_tool(name: str) -> str:
             return str(c)
     raise BackupError(f"{name} not found (set RL_PG_BIN to the PostgreSQL bin directory).")
 
-
 def _with_database(url: str, name: str) -> str:
     """Same server/credentials, different database name (keeps any query string, e.g. a socket host)."""
     from urllib.parse import urlsplit, urlunsplit
     parts = urlsplit(url)
     return urlunsplit((parts.scheme, parts.netloc, f"/{name}", parts.query, parts.fragment))
-
 
 def backup_database(backup_dir: str, url: Optional[str] = None, verify_restore: bool = True) -> Dict:
     """pg_dump (custom format) to a NEW timestamped file — never overwrites — then verify it is non-empty and
@@ -268,14 +256,12 @@ def backup_database(backup_dir: str, url: Optional[str] = None, verify_restore: 
     report.update(restore_verified=True, tables_verified=len(src))
     return report
 
-
 def _research_tables(conn) -> List:
     rows = conn.execute(
         """SELECT table_schema, table_name FROM information_schema.tables
            WHERE table_type = 'BASE TABLE' AND (table_schema = 'public' OR table_schema ~ '^rl_[a-f0-9]{12}$')
            ORDER BY 1, 2""").fetchall()
     return [(r["table_schema"], r["table_name"]) for r in rows]
-
 
 def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -293,7 +279,6 @@ def main(argv=None) -> int:
         return 1
     print(json.dumps(report, indent=1, default=str))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

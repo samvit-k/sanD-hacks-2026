@@ -17,23 +17,19 @@ DAILY_QUOTA = ("429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You 
                "'retryDelay': '25080s'}]}}")
 PER_MINUTE = DAILY_QUOTA.replace("25080s", "7s")
 
-
 class FailExtract(FakeLLM):
     def generate_json(self, prompt, model_cls):
         if model_cls is ExtractionResult:
             raise RuntimeError("simulated Gemini 503")
         return super().generate_json(prompt, model_cls)
 
-
 class FailEmbed(FakeLLM):
     def embed(self, texts):
         raise RuntimeError("simulated embedding failure")
 
-
 class FailQuota(FakeLLM):
     def generate_json(self, prompt, model_cls):
         raise QuotaExhaustedError("Gemini quota exhausted; the API says to retry in about 7.0 h.")
-
 
 # ---------- retry policy ----------
 def run_retry(fn, monkeypatch):
@@ -41,13 +37,11 @@ def run_retry(fn, monkeypatch):
     monkeypatch.setattr(llm_mod.time, "sleep", sleeps.append)
     return GeminiLLM._retry(object(), fn, "test"), sleeps  # _retry does not use instance state
 
-
 def test_quota_retry_delay_parsing():
     assert quota_retry_delay(RuntimeError(DAILY_QUOTA)) == 25080
     assert quota_retry_delay(RuntimeError(PER_MINUTE)) == 7
     assert quota_retry_delay(RuntimeError("503 UNAVAILABLE high demand")) is None
     assert quota_retry_delay(RuntimeError("429 RESOURCE_EXHAUSTED no delay given")) is None
-
 
 def test_long_quota_delay_fails_fast_without_retrying(monkeypatch):
     calls = []
@@ -59,7 +53,6 @@ def test_long_quota_delay_fails_fast_without_retrying(monkeypatch):
         run_retry(fn, monkeypatch)
     assert len(calls) == 1
 
-
 def test_short_quota_delay_is_honoured_then_succeeds(monkeypatch):
     calls = []
 
@@ -70,7 +63,6 @@ def test_short_quota_delay_is_honoured_then_succeeds(monkeypatch):
         return "ok"
     result, sleeps = run_retry(fn, monkeypatch)
     assert result == "ok" and sleeps == [7]
-
 
 def test_transient_errors_still_retried(monkeypatch):
     calls = []
@@ -84,7 +76,6 @@ def test_transient_errors_still_retried(monkeypatch):
         GeminiLLM._retry(object(), fn, "test")
     assert len(calls) == 3 and sleeps == [2, 4]
 
-
 # ---------- upload cleanup ----------
 @pytest.fixture
 def api(clean_db, monkeypatch):
@@ -94,16 +85,13 @@ def api(clean_db, monkeypatch):
     yield TestClient(main.app, headers=SESSION_HEADERS)
     llm_mod.set_llm(None)
 
-
 def upload(c, text, mode):
     return c.post("/api/papers", files={"file": ("p.pdf", pdf(text), "application/pdf")},
                   data={"mode": mode, "title": "T " + text[:20]})
 
-
 def state():
     with db.connect() as conn:
         return db.analysis_counts(conn), db.latest_new_paper(conn)
-
 
 @pytest.mark.parametrize("failing", [FailExtract, FailEmbed, FailQuota])
 def test_library_upload_failure_leaves_no_partial_paper(api, failing):
@@ -118,7 +106,6 @@ def test_library_upload_failure_leaves_no_partial_paper(api, failing):
         assert conn.execute("SELECT count(*) AS n FROM sentences WHERE paper_id NOT IN "
                             "(SELECT id FROM papers)").fetchone()["n"] == 0
 
-
 @pytest.mark.parametrize("failing", [FailExtract, FailEmbed])
 def test_evaluate_failure_does_not_become_latest_paper(api, failing):
     c = api
@@ -132,7 +119,6 @@ def test_evaluate_failure_does_not_become_latest_paper(api, failing):
     assert r.status_code == 503
     assert state() == before
     assert c.get("/api/impact/latest").json()["paper"]["id"] == first.json()["paper"]["id"]
-
 
 def test_quota_error_message_reaches_client(api):
     c = api

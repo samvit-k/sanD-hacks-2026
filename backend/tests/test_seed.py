@@ -15,7 +15,6 @@ EXTRACT = "You are extracting testable scientific findings"
 PAIR = "You are verifying the relationship"
 QUIET = lambda *_: None  # noqa: E731
 
-
 @pytest.fixture
 def manifest(tmp_path, clean_db, monkeypatch):
     monkeypatch.setattr(settings, "sim_threshold", 0.2)
@@ -30,24 +29,20 @@ def manifest(tmp_path, clean_db, monkeypatch):
     path.write_text(json.dumps({"papers": entries}))
     return path
 
-
 def rows():
     with db.connect() as conn:
         return {"papers": db.all_papers(conn), "claims": db.all_claims(conn),
                 "rels": db.all_relationships(conn), "impacts": conn.execute("SELECT * FROM impacts").fetchall()}
-
 
 def snapshot():
     r = rows()
     return {"papers": sorted(p["id"] for p in r["papers"]), "claims": sorted(c["id"] for c in r["claims"]),
             "rels": sorted(x["id"] for x in r["rels"]), "impacts": sorted(i["id"] for i in r["impacts"])}
 
-
 def test_report_fields_used_by_seed_exist():
     _, report = extract.validate_claims(ExtractionResult(claims=[]), "p", {}, 3)
     for key in ("kept", "rejected_invalid_citations", "rejected_empty_text", "rejected_over_limit"):
         assert key in report
-
 
 def test_seed_then_rerun_is_idempotent_and_keeps_uploads(manifest):
     llm = FakeLLM()
@@ -67,7 +62,6 @@ def test_seed_then_rerun_is_idempotent_and_keeps_uploads(manifest):
     assert snapshot() == before  # nothing deleted; uploaded Paper D and its impacts intact
     assert llm.count(EXTRACT) == extractions and llm.count(PAIR) == pairs  # no wasted Gemini calls
 
-
 def test_refresh_updates_judgments_in_place(manifest):
     seed_mod.seed(FakeLLM(), manifest, out=QUIET)
     pipeline.process_new_paper(FakeLLM(), pdf(PAPER_D[1]), title=PAPER_D[0])
@@ -76,7 +70,6 @@ def test_refresh_updates_judgments_in_place(manifest):
     assert stats["compared"] > 0 and snapshot() == before  # same rows, same ids, impacts intact
     with db.connect() as conn:
         assert {r["label"] for r in db.all_relationships(conn)} == {"supports"}
-
 
 def test_reextract_replaces_claims_without_duplicates_or_stale_rows(manifest):
     llm = FakeLLM()
@@ -118,11 +111,9 @@ def test_reextract_replaces_claims_without_duplicates_or_stale_rows(manifest):
     assert unrelated_impacts <= {i["id"] for i in after["impacts"]}
     assert any(p["is_new"] for p in after["papers"])
 
-
 def test_reextract_unknown_id_rejected(manifest):
     with pytest.raises(SystemExit):
         seed_mod.seed(FakeLLM(), manifest, reextract=["nope"], out=QUIET)
-
 
 def test_reset_requires_confirmation(manifest, monkeypatch):
     seed_mod.seed(FakeLLM(), manifest, out=QUIET)
@@ -132,7 +123,6 @@ def test_reset_requires_confirmation(manifest, monkeypatch):
     assert snapshot() == before
     assert seed_mod.main(["--reset", "--yes", "--manifest", str(manifest)]) == 0
     assert snapshot()["papers"] == ["paper-a", "paper-b", "paper-c"]
-
 
 def test_new_exit_code_reflects_integrity_checks(manifest, tmp_path, monkeypatch):
     seed_mod.seed(FakeLLM(), manifest, out=QUIET)

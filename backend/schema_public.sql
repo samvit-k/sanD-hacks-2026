@@ -22,4 +22,3 @@ CREATE TABLE IF NOT EXISTS public.discovery_cache (
     results      jsonb NOT NULL,
     created_at   timestamptz NOT NULL DEFAULT now()
 );
-

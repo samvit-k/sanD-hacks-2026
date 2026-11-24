@@ -44,24 +44,19 @@ SCHOLAR_FIELDS = {
 }
 _DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>?#]+)", re.I)
 
-
 class BrightDataError(RuntimeError):
     pass
 
-
 def cache_key(source: str, query: str) -> str:
     return hashlib.sha256(f"{source}|{' '.join(query.lower().split())}".encode()).hexdigest()
-
 
 # ---------- Bright Data ----------
 def _bd_headers() -> Dict:
     return {**HEADERS, "Authorization": f"Bearer {settings.brightdata_token}"}
 
-
 def bd_input(query: str) -> Dict:
     template = json.loads(settings.brightdata_input_template)
     return {k: (v.replace("{query}", query) if isinstance(v, str) else v) for k, v in template.items()}
-
 
 def _bd_json(r: httpx.Response, what: str):
     if r.status_code >= 400:
@@ -71,7 +66,6 @@ def _bd_json(r: httpx.Response, what: str):
     except ValueError as exc:
         raise BrightDataError(f"{what} returned non-JSON: {r.text[:200]}") from exc
 
-
 def bd_trigger(client: httpx.Client, query: str) -> str:
     r = client.post(f"{BD_BASE}/trigger", headers=_bd_headers(), json=[bd_input(query)],
                     params={"dataset_id": settings.brightdata_dataset_id, "include_errors": "true"})
@@ -79,7 +73,6 @@ def bd_trigger(client: httpx.Client, query: str) -> str:
     if not snap:
         raise BrightDataError(f"trigger returned no snapshot_id: {r.text[:200]}")
     return snap
-
 
 def bd_wait_and_download(client: httpx.Client, snapshot_id: str, timeout_s: float, poll_s: float = 3.0,
                          max_transient_errors: int = 2) -> List[Dict]:
@@ -112,13 +105,11 @@ def bd_wait_and_download(client: httpx.Client, snapshot_id: str, timeout_s: floa
     data = _bd_json(r, "download")
     return data if isinstance(data, list) else [data]
 
-
 def _first(rec: Dict, keys) -> Optional[object]:
     for k in keys:
         if rec.get(k) not in (None, "", []):
             return rec[k]
     return None
-
 
 def parse_scholar_records(records: List[Dict]) -> List[Dict]:
     """Map raw Scholar records to {title, url, doi, year, authors, cited_by, snippet}.
@@ -150,14 +141,12 @@ def parse_scholar_records(records: List[Dict]) -> List[Dict]:
         })
     return out
 
-
 # ---------- OpenAlex ----------
 def reconstruct_abstract(inv: Optional[Dict]) -> Optional[str]:
     if not inv:
         return None
     pos = sorted((i, w) for w, idxs in inv.items() for i in idxs)
     return " ".join(w for _, w in pos)
-
 
 def oa_to_result(w: Dict) -> Dict:
     loc = w.get("best_oa_location") or {}
@@ -171,7 +160,6 @@ def oa_to_result(w: Dict) -> Dict:
         "abstract": reconstruct_abstract(w.get("abstract_inverted_index")),
         "access_level": "abstract", "resolved": True,
     }
-
 
 def oa_resolve(client: httpx.Client, item: Dict) -> Optional[Dict]:
     """Resolve a Scholar result to an OpenAlex work by DOI, else by close title match."""
@@ -188,16 +176,13 @@ def oa_resolve(client: httpx.Client, item: Dict) -> Optional[Dict]:
             return oa_to_result(w)
     return None
 
-
 def oa_search(client: httpx.Client, query: str, n: int) -> List[Dict]:
     r = client.get(f"{OA_BASE}/works", headers=HEADERS, params={"search": query, "per-page": n})
     r.raise_for_status()
     return [oa_to_result(w) for w in r.json().get("results", [])]
 
-
 def _norm_title(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
-
 
 def dedupe(results: List[Dict], exclude_dois: List[str], limit: int) -> List[Dict]:
     seen, out = set(), []
@@ -209,7 +194,6 @@ def dedupe(results: List[Dict], exclude_dois: List[str], limit: int) -> List[Dic
         seen |= keys
         out.append(r)
     return out[:limit]
-
 
 # ---------- orchestration ----------
 def _from_brightdata(client: httpx.Client, query: str, wait_s: float) -> List[Dict]:
@@ -228,14 +212,12 @@ def _from_brightdata(client: httpx.Client, query: str, wait_s: float) -> List[Di
                         {**it, "access_level": "metadata", "resolved": False})
     return resolved
 
-
 def _finish(key: str, payload: Dict, cached: bool, for_paper_id: Optional[str], **extra) -> Dict:
     """Link the (possibly shared) cached results to the requesting paper and return them."""
     if for_paper_id:
         with db.connect() as conn:
             db.link_discovery(conn, for_paper_id, key)
     return {**payload, **extra, "cached": cached, "for_paper_id": for_paper_id}
-
 
 def discover(query: str, for_paper_id: Optional[str] = None, wait_s: Optional[float] = None,
              client: Optional[httpx.Client] = None) -> Dict:
@@ -281,7 +263,6 @@ def discover(query: str, for_paper_id: Optional[str] = None, wait_s: Optional[fl
         if own:
             client.close()
 
-
 def main() -> None:
     ap = argparse.ArgumentParser(description="Pre-warm the discovery cache, or save a raw Bright Data sample.")
     ap.add_argument("query")
@@ -304,7 +285,6 @@ def main() -> None:
     print(json.dumps({k: res[k] for k in ("source", "cached", "fallback_reason")}, indent=1))
     for r in res["results"]:
         print(f"- {r.get('title')} ({r.get('year')}) {r.get('doi') or ''}")
-
 
 if __name__ == "__main__":
     main()

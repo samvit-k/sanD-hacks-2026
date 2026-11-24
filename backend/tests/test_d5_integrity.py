@@ -35,10 +35,8 @@ APF_T = "Automated Personalized Feedback Improves Learning Gains in an Intellige
 APF = (APF_T + " Ekaterina Kochmar1,2, Dung Do Vu1,3, Robert Belfer1, Varun Gupta1, Iulian Vlad Serban1, and Joelle "
        "Pineau1,4 1 Korbit Technologies Inc. 3 ́Ecole de Technologie Sup ́erieure 4 McGill University Abstract.")
 
-
 def authors_of(pid, title, text):
     return A.paper_authors({"id": pid, "title": title}, [{"id": f"{pid}:p1_s1", "text": text}])
-
 
 # ---------- author lists ----------
 def test_author_lists_are_parsed_from_real_front_matter():
@@ -50,12 +48,10 @@ def test_author_lists_are_parsed_from_real_front_matter():
                                                           "Hamed Zamani"]
     assert authors_of("qp", QP_T, QP)["names"][-1] == "Jackie C.K. Cheung"
 
-
 def test_ambiguous_author_blocks_are_unknown_not_empty():
     k12 = authors_of("k12", K12_T, K12)  # names and affiliations run together without separators
     assert k12["status"] == A.UNKNOWN and "run together" in k12["reason"]
     assert authors_of("x", "Some Other Title", NRMS)["status"] == A.UNKNOWN  # title not in the sentence
-
 
 def test_shared_authors_need_full_given_name_and_surname():
     pair = A.shared_authors(authors_of("nrms", NRMS_T, NRMS), authors_of("mind", MIND_T, MIND))
@@ -64,7 +60,6 @@ def test_shared_authors_need_full_given_name_and_surname():
     assert pair["independence_established"] is False and pair["review_needed"]
     assert pair["basis_sentence_ids"] == ["nrms:p1_s1", "mind:p1_s1"]
     assert "does not by itself mean the same data" in pair["summary"]
-
 
 def test_middle_names_may_be_missing_but_initials_only_give_possible_matches():
     pair = A.shared_authors(authors_of("qp", QP_T, QP), authors_of("apf", APF_T, APF))
@@ -75,14 +70,12 @@ def test_middle_names_may_be_missing_but_initials_only_give_possible_matches():
     b = {"status": A.PARSED, "names": ["Chuhan Wu"], "source_sentence_id": "b:p1_s1"}
     assert A.shared_authors(a, b)["status"] == A.POSSIBLE
 
-
 def test_no_detected_overlap_is_not_independence_and_unknown_is_not_none():
     none = A.shared_authors(authors_of("nrms", NRMS_T, NRMS), authors_of("lamp", LAMP_T, LAMP))
     assert none["status"] == A.NONE_DETECTED and none["independence_established"] is False
     assert "does not establish independence" in none["summary"]
     unknown = A.shared_authors(authors_of("k12", K12_T, K12), authors_of("lamp", LAMP_T, LAMP))
     assert unknown["status"] == A.PAIR_UNKNOWN and unknown["review_needed"]
-
 
 def test_independence_flag_qualifies_only_supportive_labels():
     shared = {"status": A.SHARED}
@@ -92,15 +85,12 @@ def test_independence_flag_qualifies_only_supportive_labels():
     assert A.independence_flag("not_comparable", shared)["level"] is None
     assert A.independence_flag("supports", shared, insufficient=True)["level"] is None
 
-
 # ---------- relationship classification ----------
 STORED = {"pa:p1_s1": "pa", "pb:p1_s1": "pb"}
-
 
 def judgment(label, comparability):
     return PairJudgment(comparability=comparability, label=label, explanation="Both improve performance.",
                         key_differences=[], cited_sentence_ids=["pa:p1_s1", "pb:p1_s1"])
-
 
 def test_questionable_thematic_support_is_shown_as_not_comparable_with_the_reason_recorded():
     r = compare.apply_pair_guardrail(judgment("supports", "thematic_only"), "pa", "pb", STORED)
@@ -108,14 +98,12 @@ def test_questionable_thematic_support_is_shown_as_not_comparable_with_the_reaso
     assert r["comparability"] == "thematic_only" and "Thematic similarity is not support" in r["label_note"]
     assert r["explanation"] == "Both improve performance."  # Gemini's explanation is kept, not rewritten
 
-
 def test_genuinely_comparable_support_is_kept():
     for comp in ("same_hypothesis_same_measure", "same_hypothesis_different_setting"):
         r = compare.apply_pair_guardrail(judgment("supports", comp), "pa", "pb", STORED)
         assert r["label"] == "supports" and r["label_note"] is None
     r = compare.apply_pair_guardrail(judgment("genuine_contradiction", "same_hypothesis_same_measure"), "pa", "pb", STORED)
     assert r["label"] == "genuine_contradiction"
-
 
 def test_prompts_require_same_hypothesis_and_carry_author_dependence():
     claim = {"paper_title": "T", "text": "c", "conditions": {}, "context": [{"id": "pa:p1_s1", "text": "s"}]}
@@ -126,7 +114,6 @@ def test_prompts_require_same_hypothesis_and_carry_author_dependence():
                                     dependence="share 4 authors")
     assert "adds independent support" not in i and "never call it independent" in i and "share 4 authors" in i
 
-
 def _graph(label, front_a, front_b):
     papers = [{"id": "pa", "title": front_a[0]}, {"id": "pb", "title": front_b[0]}]
     page1 = {"pa": [{"id": "pa:p1_s1", "text": front_a[1]}], "pb": [{"id": "pb:p1_s1", "text": front_b[1]}]}
@@ -134,7 +121,6 @@ def _graph(label, front_a, front_b):
               {"id": 2, "paper_id": "pb", "text": "B", "sentence_ids": []}]
     rels = [{"id": 5, "claim_a": 1, "claim_b": 2, "label": label, "cited_sentence_ids": []}]
     return graph.build_graph("Q?", papers, claims, rels, {}, authors=A.AuthorIndex(papers, page1))
-
 
 def test_shared_authorship_qualifies_support_but_never_changes_the_label():
     g = _graph("supports", (NRMS_T, NRMS), (MIND_T, MIND))
@@ -145,12 +131,10 @@ def test_shared_authorship_qualifies_support_but_never_changes_the_label():
     assert edge["data"]["label"] == "supports" and edge["data"]["independence"] == "review"
     assert g["papers"]["pa"]["authors"]["names"][0] == "Chuhan Wu"
 
-
 def test_unrelated_studies_are_not_flagged_for_independence():
     g = _graph("not_comparable", (NRMS_T, NRMS), (LAMP_T, LAMP))
     assert g["relationships"]["5"]["independence"]["status"] == A.NONE_DETECTED
     assert g["relationships"]["5"]["independence"]["level"] is None
-
 
 # ---------- chatbot ----------
 def _index():
@@ -158,7 +142,6 @@ def _index():
     return A.AuthorIndex(papers, {"nrms": [{"id": "nrms:p1_s1", "text": NRMS}],
                                   "mind": [{"id": "mind:p1_s1", "text": MIND}],
                                   "lamp": [{"id": "lamp:p1_s1", "text": LAMP}]})
-
 
 def test_confirmation_between_shared_author_papers_must_acknowledge_it():
     idx = _index()
@@ -169,13 +152,11 @@ def test_confirmation_between_shared_author_papers_must_acknowledge_it():
     assert chat.independence_issues(ok, {"mind", "nrms"}, idx) == []
     assert chat.independence_issues("LaMP supports this.", {"lamp", "nrms"}, idx) == []  # no shared authors
 
-
 def test_independence_is_never_asserted_but_may_be_denied():
     idx = _index()
     assert chat.independence_issues("This was independently replicated.", set(), idx)[0]["kind"] == "independence_claimed"
     assert chat.independence_issues("This is not independent confirmation.", set(), idx) == []
     assert chat.independence_issues("Whether the evidence is independent is unclear.", set(), idx) == []
-
 
 def test_answers_that_overstate_independence_are_withheld():
     idx = _index()
@@ -185,7 +166,6 @@ def test_answers_that_overstate_independence_are_withheld():
     out = chat.validate_answer(ans, shown, {"paper:mind", "paper:nrms", "q"},
                                independence=lambda a: chat.independence_issues(a, {"mind", "nrms"}, idx))
     assert out["guardrail"] == chat.GUARDRAIL_INDEPENDENCE and out["cited_sentence_ids"] == []
-
 
 # ---------- review audit trail (database) ----------
 def _seed_relationship(conn):
@@ -204,11 +184,9 @@ def _seed_relationship(conn):
                                         "cited_sentence_ids": ["pa:p1_s1", "pb:p1_s1"]})
     return a, b, rid
 
-
 def _proposal(rid, a, b, **kw):
     return {"target_kind": "relationship", "target_id": rid, "expected_label": "supports", "expected_claims": [b, a],
             "proposed_label": "not_comparable", "reason": "Different hypotheses.", **kw}
-
 
 def test_identical_proposals_are_recorded_once_and_changed_evidence_is_a_new_proposal(clean_db):
     with db.connect() as conn:
@@ -229,7 +207,6 @@ def test_identical_proposals_are_recorded_once_and_changed_evidence_is_a_new_pro
         stored = conn.execute("SELECT label FROM relationships WHERE id = %s", (rid,)).fetchone()
         assert stored["label"] == "supports"  # proposals never change the stored label
 
-
 def test_reviews_without_a_fingerprint_are_not_duplicated(clean_db):
     with db.connect() as conn:
         a, b, rid = _seed_relationship(conn)
@@ -240,7 +217,6 @@ def test_reviews_without_a_fingerprint_are_not_duplicated(clean_db):
         assert [x["action"] for x in out["actions"]] == ["skip_unverifiable_existing"]
         assert len(db.all_reviews(conn)) == 1
 
-
 def test_proposals_for_a_different_target_are_rejected_and_nothing_is_written(clean_db):
     with db.connect() as conn:
         a, b, rid = _seed_relationship(conn)
@@ -250,7 +226,6 @@ def test_proposals_for_a_different_target_are_rejected_and_nothing_is_written(cl
         bad_fp = reviews.record_proposals(conn, [_proposal(rid, a, b, expected_fingerprint="0" * 64)], "model", "t",
                                           apply=True)
         assert "fingerprint differs" in bad_fp["rejected"][0]["problems"][0]
-
 
 def test_only_a_named_human_decision_closes_a_review_and_reset_clears_reviews(clean_db):
     with db.connect() as conn:

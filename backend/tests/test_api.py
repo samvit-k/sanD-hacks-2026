@@ -4,25 +4,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import discover as discovery
-from app import llm as llm_mod
-from app import main, pipeline
+from app import main
 from app.config import settings
 
-from .fake_llm import FakeLLM
 from .test_pipeline import PAPER_D, pdf, seed
 from .conftest import SESSION_HEADERS  # noqa: E402
 
-
 @pytest.fixture
-def client(clean_db, monkeypatch):
-    monkeypatch.setattr(settings, "sim_threshold", 0.2)
+def client(fake_llm, monkeypatch):
     monkeypatch.setattr(settings, "brightdata_token", "")
-    pipeline._question_vecs.clear()
-    fake = FakeLLM()
-    llm_mod.set_llm(fake)
-    yield TestClient(main.app, headers=SESSION_HEADERS), fake
-    llm_mod.set_llm(None)
-
+    yield TestClient(main.app, headers=SESSION_HEADERS), fake_llm
 
 def test_upload_flow_and_read_endpoints(client):
     c, fake = client
@@ -43,7 +34,6 @@ def test_upload_flow_and_read_endpoints(client):
     assert c.get("/api/impact/latest").json()["paper"]["id"] == summary["paper"]["id"]
     assert c.get("/api/checks").json()["ok"] is True
 
-
 def test_discover_defaults_to_latest_new_paper_and_shows_in_graph(client, monkeypatch):
     c, fake = client
     seed(fake)
@@ -62,14 +52,12 @@ def test_discover_defaults_to_latest_new_paper_and_shows_in_graph(client, monkey
     assert disc and disc[0]["anchor"] == f"paper:{paper_id}"
     assert c.post("/api/discover", json={"paper_id": "missing"}).status_code == 404
 
-
 def test_blank_pdf_returns_clear_422(client):
     c, _ = client
     doc = fitz.open()
     doc.new_page()
     r = c.post("/api/papers", files={"file": ("scan.pdf", doc.tobytes(), "application/pdf")})
     assert r.status_code == 422 and "No extractable text" in r.json()["detail"]
-
 
 def test_health_reports_without_secrets(client):
     c, _ = client

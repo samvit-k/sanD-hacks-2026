@@ -25,7 +25,6 @@ RELS = [
      "cited_sentence_ids": [], "explanation": "Insufficient evidence", "condition_diff": {}},
 ]
 
-
 def test_graph_nodes_edges_and_question_edges():
     g = build_graph("Q?", PAPERS, CLAIMS, RELS, SENT)
     types = {e["data"]["type"] for e in g["edges"]}
@@ -38,14 +37,12 @@ def test_graph_nodes_edges_and_question_edges():
     assert all(e["source"].startswith("claim:") and e["target"].startswith("claim:") for e in rel_edges)
     assert g["papers"]["pb"]["access_level"] == "abstract"
 
-
 def test_graph_relationship_details_rebuild_quotes():
     g = build_graph("Q?", PAPERS, CLAIMS, RELS, SENT)
     r = g["relationships"]["10"]
     assert r["cited"]["a"][0]["text"] == "A scored higher." and r["cited"]["b"][0]["page"] == 1
     assert g["relationships"]["11"]["cited"] == {"a": [], "b": []}
     assert g["claims"]["1"]["quotes"][0]["section"] == "results"
-
 
 def test_impact_summary_only_includes_current_paper():
     impacts = [
@@ -62,7 +59,6 @@ def test_impact_summary_only_includes_current_paper():
     assert {c["id"] for c in s["not_addressed"]} == {2, 4}
     assert [q["id"] for q in s["impacts"][0]["cited"]] == ["pa:p1_s1", "pd:p2_s3"]
 
-
 def test_impact_summary_hides_citations_when_insufficient():
     impacts = [{"id": 5, "new_claim_id": 3, "prior_claim_id": 1, "impact": "leaves_unresolved",
                 "rationale": "Insufficient evidence", "cited_sentence_ids": ["pa:p1_s1"],
@@ -70,13 +66,11 @@ def test_impact_summary_hides_citations_when_insufficient():
     s = build_impact_summary(PAPERS[2], CLAIMS, impacts, SENT, PAPERS)
     assert s["impacts"][0]["cited"] == []
 
-
 def test_ref_order_numbers_papers_by_insertion_then_their_claims():
     from app.graph import ref_order
     papers = [{"id": "b", "created_at": "2026-01-02"}, {"id": "a", "created_at": "2026-01-01"}]
     claims = [{"id": 3, "paper_id": "a"}, {"id": 1, "paper_id": "b"}, {"id": 2, "paper_id": "a"}]
     assert ref_order(papers, claims) == ["paper:a", "claim:2", "claim:3", "paper:b", "claim:1"]
-
 
 def test_build_graph_attaches_refs_only_when_known():
     g = build_graph("Q?", PAPERS, CLAIMS, RELS, SENT, refs={"paper:" + PAPERS[0]["id"]: 7})

@@ -21,7 +21,6 @@ Impact = Literal["strengthens", "challenges", "qualifies", "leaves_unresolved"]
 COMPARABILITY = ("same_hypothesis_same_measure", "same_hypothesis_different_setting", "thematic_only")
 Comparability = Literal["same_hypothesis_same_measure", "same_hypothesis_different_setting", "thematic_only"]
 
-
 class Conditions(BaseModel):
     population: Optional[str] = Field(None, description="Who was studied; null if not reported")
     sample_size: Optional[str] = Field(None, description="e.g. 'n=120'; null if not reported")
@@ -32,19 +31,16 @@ class Conditions(BaseModel):
     significance: Optional[str] = Field(None, description="e.g. 'p<0.01' or 'not significant'")
     limitations: Optional[str] = Field(None, description="Limitations the authors state")
 
-
 class ExtractedClaim(BaseModel):
     text: str = Field(description="One testable finding, stated faithfully and concisely")
     sentence_ids: List[str] = Field(description="Full IDs of the sentences that state this finding")
     conditions: Conditions
-
 
 class ExtractionResult(BaseModel):
     claims: List[ExtractedClaim]
     no_findings_note: Optional[str] = Field(
         None, description="Only when returning fewer claims than asked (especially none): one sentence on why, "
                           "e.g. the paper does not study the research question's topic. Not evidence.")
-
 
 class PairJudgment(BaseModel):
     comparability: Optional[Comparability] = Field(
@@ -57,12 +53,10 @@ class PairJudgment(BaseModel):
     key_differences: List[str] = Field(description="Condition differences that matter for this judgment; may be empty")
     cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
 
-
 class ImpactJudgment(BaseModel):
     impact: Impact
     rationale: str = Field(description="2-3 sentences grounded in the cited sentences")
     cited_sentence_ids: List[str] = Field(description="Full sentence IDs from BOTH papers supporting the judgment")
-
 
 class QuestionProposal(BaseModel):
     question: str = Field(description="ONE focused, neutral central research question ending with '?'. "
@@ -70,7 +64,6 @@ class QuestionProposal(BaseModel):
     rationale: str = Field(description="One sentence on how the question focuses the user's interest (what is "
                                        "compared, for whom, which outcome). Mention no study, author, year, "
                                        "statistic or result.")
-
 
 class ChatAnswer(BaseModel):
     answer: str = Field(description="Answer grounded ONLY in the provided evidence. Refer to graph items with "

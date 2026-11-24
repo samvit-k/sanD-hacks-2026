@@ -14,10 +14,8 @@ from .contracts import CONDITION_FIELDS, NOT_REPORTED, ImpactJudgment, PairJudgm
 INSUFFICIENT = ("Insufficient evidence: the assessment could not be verified against valid source "
                 "sentences from both papers, so no judgment is shown.")
 
-
 def _norm(v: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(v)).strip().lower().rstrip(".")
-
 
 def condition_diff(a: Dict, b: Dict) -> Dict:
     """Per field: "same", "not reported" (both missing), or [value_a, value_b]."""
@@ -34,7 +32,6 @@ def condition_diff(a: Dict, b: Dict) -> Dict:
             diff[field] = [va or NOT_REPORTED, vb or NOT_REPORTED]
     return diff
 
-
 def _claim_block(tag: str, claim: Dict) -> str:
     conds = {k: v for k, v in (claim.get("conditions") or {}).items() if v}
     lines = "\n".join(f"  [{s['id']}] {s['text']}" for s in claim["context"])
@@ -45,7 +42,6 @@ def _claim_block(tag: str, claim: Dict) -> str:
         f"Study conditions: {json.dumps(conds, ensure_ascii=False) if conds else 'none reported'}\n"
         f"Source sentences (cite by ID):\n{lines}\n"
     )
-
 
 PAIR_PROMPT = """You are verifying the relationship between two scientific claims about: {question}
 
@@ -117,16 +113,13 @@ Rules:
   EARLIER and one from the NEW paper. Cite no other IDs.
 """
 
-
 def _dependence_block(dependence: Optional[str]) -> str:
     return f"Relationship between the two papers (computed from their author lists): {dependence}\n" if dependence else ""
-
 
 def build_pair_prompt(question: str, a: Dict, b: Dict, diff: Dict, dependence: Optional[str] = None) -> str:
     return PAIR_PROMPT.format(question=question, block_a=_claim_block("CLAIM A", a),
                               block_b=_claim_block("CLAIM B", b), diff=json.dumps(diff, ensure_ascii=False, indent=1),
                               dependence=_dependence_block(dependence))
-
 
 def build_impact_prompt(question: str, prior: Dict, new: Dict, diff: Dict, rel: Dict,
                         dependence: Optional[str] = None) -> str:
@@ -140,11 +133,9 @@ def build_impact_prompt(question: str, prior: Dict, new: Dict, diff: Dict, rel: 
         rel_explanation=rel.get("explanation", ""),
     )
 
-
 THEMATIC_NOTE = ("Label set by SpiderMonkey: Gemini chose “supports” but judged the findings related only "
                  "thematically (they test different hypotheses). Thematic similarity is not support, so the "
                  "relationship is shown as not comparable. Gemini's explanation is kept unchanged.")
-
 
 def apply_pair_guardrail(j: PairJudgment, paper_a: str, paper_b: str, stored_paper: Dict[str, str]) -> Dict:
     ids, ok = validate_two_paper_citations(j.cited_sentence_ids, paper_a, paper_b, stored_paper)
@@ -162,7 +153,6 @@ def apply_pair_guardrail(j: PairJudgment, paper_a: str, paper_b: str, stored_pap
             "cited_sentence_ids": [], "insufficient_evidence": True,
             "comparability": None, "model_label": None, "label_note": None}
 
-
 def apply_impact_guardrail(j: ImpactJudgment, prior_paper: str, new_paper: str, stored_paper: Dict[str, str]) -> Dict:
     ids, ok = validate_two_paper_citations(j.cited_sentence_ids, prior_paper, new_paper, stored_paper)
     if ok:
@@ -170,7 +160,6 @@ def apply_impact_guardrail(j: ImpactJudgment, prior_paper: str, new_paper: str, 
                 "insufficient_evidence": False}
     return {"impact": "leaves_unresolved", "rationale": INSUFFICIENT, "cited_sentence_ids": [],
             "insufficient_evidence": True}
-
 
 def dedupe_pairs(rows: List[Dict], threshold: float) -> List[Dict]:
     """rows: {a, b, sim}. Keep sim >= threshold, one entry per unordered pair (a < b)."""

@@ -50,7 +50,6 @@ export function useChat(client, { enabled = true, onDataChanged = null } = {}) {
   const load = useCallback(async () => {
     const g = gen.current
     const v = ++historyVersion.current
-    const sid = sessionId
     try {
       const res = await client.chatHistory()
       if (gen.current !== g || historyVersion.current !== v) return // superseded
@@ -81,7 +80,6 @@ export function useChat(client, { enabled = true, onDataChanged = null } = {}) {
     sending.current = true // synchronous guard: set before any await
     const g = gen.current
     const token = ++sendToken.current
-    const sid = sessionId
     setState((s) => ({ ...s, pending: { text: message, context, token }, error: null }))
     try {
       const res = await client.chat({ message, context })

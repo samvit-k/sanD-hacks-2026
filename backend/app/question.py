@@ -23,14 +23,11 @@ MAX_PREVIOUS = 6            # earlier suggestions sent back so "Regenerate" yiel
 PROPOSAL_TEMPERATURE = 0.7  # higher than extraction/judgment (0.1): wording variety, not evidence
 MAX_ATTEMPTS = 2            # one corrective retry at most; keeps paid calls bounded
 
-
 class ProposalUnavailableError(RuntimeError):
     """Gemini could not be reached / failed; nothing was proposed or saved."""
 
-
 class ProposalRejectedError(RuntimeError):
     """Gemini answered, but the suggestion broke the rules (e.g. it asserted a finding)."""
-
 
 def normalize_question(question: Optional[str]) -> str:
     q = " ".join((question or "").split())
@@ -40,7 +37,6 @@ def normalize_question(question: Optional[str]) -> str:
         raise ValueError(f"The research question must be at most {MAX_QUESTION_LEN} characters.")
     return q
 
-
 def check_interest(text: Optional[str]) -> str:
     t = " ".join((text or "").split())
     if len(t) < 3 or len(t.split()) < 2:
@@ -49,10 +45,8 @@ def check_interest(text: Optional[str]) -> str:
         raise ValueError(f"The research interest must be at most {MAX_INTEREST_LEN} characters.")
     return t
 
-
 def _key(q: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", q.casefold()).strip()
-
 
 # Content that would mean the model is reporting evidence it does not have.
 _EVIDENCE = re.compile(
@@ -83,11 +77,9 @@ _GROUP = re.compile(r"\b(?:" + "|".join(re.escape(t) + ("" if t.endswith("countr
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9'-]*")
 _CAP_OK = {"ai"}  # an abbreviation of the topic itself, not a restriction
 
-
 def _stem(w: str) -> str:
     w = w.casefold().strip("'-")
     return re.sub(r"(?:es|s)$", "", w) if len(w) > 3 else w
-
 
 def unsupported_restrictions(question: str, interest: str) -> List[str]:
     """Explicit restrictions in `question` that the researcher's `interest` does not contain."""
@@ -112,7 +104,6 @@ def unsupported_restrictions(question: str, interest: str) -> List[str]:
                 found.append(w)
     return list(dict.fromkeys(found))
 
-
 RULES = """You help a researcher phrase the CENTRAL RESEARCH QUESTION of an evidence graph. The graph will
 compare testable claims extracted from scientific papers, so the question must make those claims comparable.
 
@@ -131,7 +122,6 @@ Rules:
 7. rationale: one short sentence on how the question focuses the interest (what is compared, which outcome).
    It must not mention studies, results or numbers."""
 
-
 def build_proposal_prompt(interest: str, previous: Sequence[str] = ()) -> str:
     parts = [RULES, "", "RESEARCH INTEREST (the researcher's own words):", "<<<", interest, ">>>"]
     if previous:
@@ -140,12 +130,10 @@ def build_proposal_prompt(interest: str, previous: Sequence[str] = ()) -> str:
         parts += [f"- {p}" for p in previous]
     return "\n".join(parts)
 
-
 def _asserts_evidence(text: str, interest: str) -> bool:
     """Statistics, study citations or "studies show"-style findings not taken from the researcher's own words."""
     own = interest.casefold()
     return any(m.group(0).casefold() not in own for m in _EVIDENCE.finditer(text))
-
 
 def validate_proposal(raw: QuestionProposal, previous: Sequence[str] = (), interest: str = "") -> Dict:
     """Accept a proposal only if it is a usable question that reports no findings and adds no explicit
@@ -172,7 +160,6 @@ def validate_proposal(raw: QuestionProposal, previous: Sequence[str] = (), inter
     if not rationale or len(rationale) > 400 or _asserts_evidence(rationale, interest):
         rationale = None  # never show a rationale that reports (invented) evidence
     return {"question": q, "rationale": rationale}
-
 
 def propose_question(llm: LLM, interest: str, previous: Sequence[str] = ()) -> Dict:
     """One Gemini suggestion for the user to review. Writes nothing; `saved` is always False."""

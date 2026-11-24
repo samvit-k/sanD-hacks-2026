@@ -20,7 +20,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import db, reviews  # noqa: E402
 
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--session", required=True)
@@ -46,7 +45,6 @@ def main() -> int:
     if not args.apply:
         print("dry run: nothing written (use --apply)")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

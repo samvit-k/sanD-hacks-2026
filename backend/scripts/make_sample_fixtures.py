@@ -29,12 +29,10 @@ PAPER_D = {"id": "sample-d", "title": "[Sample] Do AI tutor gains last? A six-mo
 
 S = {}
 
-
 def sent(pid, page, idx, section, text):
     sid = f"{pid}:p{page}_s{idx}"
     S[sid] = {"id": sid, "paper_id": pid, "page": page, "idx": idx, "section": section, "text": text}
     return sid
-
 
 a1 = sent("sample-a", 6, 3, "results", "After 12 weeks, students using the AI tutor scored 25% higher on the "
           "end-of-unit mathematics test than the control group (p < 0.01).")
@@ -73,14 +71,12 @@ CLAIM_D = [
      "conditions": CD, "sentence_ids": [d2]},
 ]
 
-
 def rel(rid, a, b, label, expl, keys, cited, sim, insufficient=False):
     ca = next(c for c in CLAIMS + CLAIM_D if c["id"] == a)
     cb = next(c for c in CLAIMS + CLAIM_D if c["id"] == b)
     return {"id": rid, "claim_a": a, "claim_b": b, "label": label, "explanation": expl, "key_differences": keys,
             "cited_sentence_ids": cited, "similarity": sim, "insufficient_evidence": insufficient,
             "condition_diff": condition_diff(ca["conditions"], cb["conditions"])}
-
 
 RELS = [
     rel(1, 1, 2, "apparent_contradiction",
@@ -122,12 +118,10 @@ DISCOVERY = {"query": PAPER_D["title"], "source": "openalex", "fallback_reason":
                  {"title": "[Sample] Fade-out of educational intervention effects", "year": 2019, "doi": None,
                   "abstract": None, "access_level": "metadata", "resolved": False}]}
 
-
 def write(name, data):
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(json.dumps(data, indent=1))
     print(f"wrote {OUT / name}")
-
 
 if __name__ == "__main__":
     g = build_graph(Q, PAPERS, CLAIMS, RELS, S, source="sample")
