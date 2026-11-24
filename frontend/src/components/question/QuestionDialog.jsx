@@ -70,6 +70,8 @@ export default function QuestionDialog({ open, client, workspace, onClose, onCon
   const current = workspace?.question ?? null
   const composer = useQuestionComposer({ client, currentQuestion: current, onConfirmed })
   const { mode, setMode, interest, setInterest, latest, draft, setDraft, origin, generating, error, conflict } = composer
+  const storedPapers = workspace?.counts?.papers ?? 0
+  const picked = composer.paperFiles
   const interestRef = useRef(null)
   const draftRef = useRef(null)
   const busy = generating || composer.confirming
@@ -102,7 +104,7 @@ export default function QuestionDialog({ open, client, workspace, onClose, onCon
           </p>
 
           <div className="seg" role="radiogroup" aria-label="How to write the question">
-            {[['interest', 'Describe your interest'], ['manual', 'Write the question myself']].map(([key, label]) => (
+            {[['interest', 'Describe your interest'], ['papers', 'From my papers'], ['manual', 'Write the question myself']].map(([key, label]) => (
               <button key={key} type="button" role="radio" aria-checked={mode === key}
                 className={`seg-btn ${mode === key ? 'on' : ''}`} onClick={() => setMode(key)}>{label}</button>
             ))}
@@ -123,6 +125,32 @@ export default function QuestionDialog({ open, client, workspace, onClose, onCon
                 {generating && <button type="button" className="link-btn muted" onClick={composer.cancelGeneration}>Cancel</button>}
                 <span className="qd-hint">Gemini proposes a question only; it does not look up or state any findings.</span>
               </div>
+            </div>
+          )}
+
+          {mode === 'papers' && (
+            <div className="qd-field">
+              <label htmlFor="qd-papers">Your papers <span className="qd-sub">(PDFs; the first pages are read)</span></label>
+              <input id="qd-papers" type="file" accept="application/pdf,.pdf" multiple
+                disabled={busy} onChange={(e) => composer.setPaperFiles(e.target.files)} />
+              {picked.length > 0 ? (
+                <p className="qd-hint">
+                  {plural(picked.length, 'PDF')} selected. After you confirm the question, they are added to the evidence library.
+                </p>
+              ) : storedPapers > 0 ? (
+                <p className="qd-hint">No files chosen: the {plural(storedPapers, 'paper')} already in this project will be used.</p>
+              ) : null}
+              <div className="qd-row">
+                <button type="button" className="btn btn-sm" disabled={busy || (!picked.length && !storedPapers)}
+                  onClick={() => (latest ? composer.regenerate() : composer.generate())}>
+                  {generating ? <><span className="spinner" aria-hidden="true" /> Reading papers…</> : latest ? 'Regenerate suggestion' : 'Suggest a question'}
+                </button>
+                {generating && <button type="button" className="link-btn muted" onClick={composer.cancelGeneration}>Cancel</button>}
+                <span className="qd-hint">Gemini proposes a question the papers share; it does not state their findings.</span>
+              </div>
+              {latest?.papers?.length > 0 && origin !== ORIGIN.manual && (
+                <p className="qd-hint">Based on: {latest.papers.join('; ')}</p>
+              )}
             </div>
           )}
 

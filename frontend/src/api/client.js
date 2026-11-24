@@ -94,6 +94,14 @@ export function sessionApi(sessionId) {
     // Gemini SUGGESTS a question from a broad interest; the server saves nothing.
     proposeQuestion: (interest, previous = []) =>
       r('/api/question/propose', { method: 'POST', json: { interest, previous }, timeoutMs: PROPOSE_TIMEOUT_MS }),
+    // Gemini SUGGESTS a question from the first pages of these PDFs (none: the project's stored papers).
+    // The server reads and discards the files; nothing is saved.
+    proposeQuestionFromPapers: (files = [], previous = []) => {
+      const form = new FormData()
+      for (const f of files) form.append('files', f)
+      for (const p of previous) form.append('previous', p)
+      return r('/api/question/propose-from-papers', { method: 'POST', form, timeoutMs: PROPOSE_TIMEOUT_MS })
+    },
     // User-started re-analysis of one stored paper under the current question.
     analyzePaper: (paperId) =>
       r(`/api/papers/${encodeURIComponent(paperId)}/analyze`, { method: 'POST', timeoutMs: UPLOAD_TIMEOUT_MS }),

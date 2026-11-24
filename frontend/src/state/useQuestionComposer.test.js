@@ -273,3 +273,21 @@ describe('confirmation', () => {
     expect(result.current.canConfirm).toBe(false)
   })
 })
+describe('paper-first suggestions', () => {
+  it('suggests from picked PDFs and hands the files to onConfirmed', async () => {
+    const files = [new File(['%PDF'], 'a.pdf', { type: 'application/pdf' })]
+    const client = {
+      proposeQuestionFromPapers: vi.fn(async () => ({ proposal: { question: 'Do AI tutors affect learning?', rationale: null }, papers: ['A'], source: 'gemini_papers' })),
+      setQuestion: vi.fn(async (q) => ({ question: q })),
+    }
+    const onConfirmed = vi.fn()
+    const { result } = renderHook(() => useQuestionComposer({ client, onConfirmed }))
+    act(() => { result.current.setMode('papers'); result.current.setPaperFiles(files) })
+    await act(async () => { await result.current.generate() })
+    expect(client.proposeQuestionFromPapers).toHaveBeenCalledWith(files, [])
+    expect(result.current.draft).toBe('Do AI tutors affect learning?')
+    await act(async () => { await result.current.confirm() })
+    expect(onConfirmed).toHaveBeenCalledWith({ question: 'Do AI tutors affect learning?' },
+      expect.objectContaining({ files }))
+  })
+})

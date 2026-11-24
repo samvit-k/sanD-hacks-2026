@@ -204,6 +204,50 @@ def propose_question(req: ProposeRequest, sid: str = Depends(require_session)):
     except questions.ProposalRejectedError as exc:
         raise HTTPException(502, {"message": str(exc), "code": "proposal_rejected"})
 
+def _pdf_excerpt(data: bytes) -> Dict:
+    from . import ingest
+    pages = ingest.extract_pages(data)  # raises NoExtractableTextError
+    return {"title": ingest.guess_title(data), "text": " ".join(pages[:2])}
+
+def _stored_excerpts() -> List[Dict]:
+    out = []
+    with db.connect() as conn:
+        for p in db.all_papers(conn)[:questions.MAX_PAPERS]:
+            text = " ".join(s["text"] for s in db.paper_sentences(conn, p["id"]) if s["page"] <= 2)
+            out.append({"title": p["title"], "text": text})
+    return out
+
+@app.post("/api/question/propose-from-papers")
+def propose_question_from_papers(files: List[UploadFile] = File(default=[]), previous: List[str] = Form(default=[]),
+                                 sid: str = Depends(require_session)):
+    """Gemini suggests ONE central research question from the first pages of the given PDFs (or, when none are
+    sent, from the session's stored papers). Writes nothing: the PDFs are read and discarded; the user must
+    confirm the question (PUT /api/workspace) and upload the papers separately."""
+    llm = _require_llm()
+    if len(files) > questions.MAX_PAPERS:
+        raise HTTPException(422, f"Choose at most {questions.MAX_PAPERS} papers.")
+    papers = []
+    for f in files:
+        data = f.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{f.filename} is larger than 30 MB")
+        try:
+            papers.append(_pdf_excerpt(data))
+        except NoExtractableTextError as exc:
+            raise HTTPException(422, f"{f.filename}: {exc}")
+    if not papers:
+        papers = _in(sid, _stored_excerpts)
+        if not papers:
+            raise HTTPException(422, "Choose one or more PDFs to suggest a question from.")
+    try:
+        return {**questions.propose_from_papers(llm, papers, previous), "session_id": sid}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except questions.ProposalUnavailableError as exc:
+        raise HTTPException(503, {"message": str(exc), "code": "model_unavailable"})
+    except questions.ProposalRejectedError as exc:
+        raise HTTPException(502, {"message": str(exc), "code": "proposal_rejected"})
+
 # ---------- graph and inspectors ----------
 @app.get("/api/graph")
 def graph(sid: str = Depends(require_session)):
