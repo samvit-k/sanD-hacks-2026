@@ -81,6 +81,19 @@ and settings, proper nouns such as places or products); not a repeat of `previou
 These are conservative pattern checks, not semantic verification: the user always reviews the question.
 Errors: `422` invalid interest · `503 {code: "model_unavailable"}` · `502 {code: "proposal_rejected"}`.
 
+### `POST /api/question/propose-from-papers` (paper-first)
+Gemini **suggests** one central question shared by the given papers. Multipart: `files` (0–8 PDFs) and repeated
+`previous` fields. With no files, the session's stored papers are used. Only the first two pages of each paper are
+read; uploaded PDFs are **not stored**. Writes nothing (`"saved": false`).
+```json
+{"papers": ["Title A", "Title B"], "source": "gemini_papers", "model": "gemini-…", "saved": false,
+ "proposal": {"question": "…?", "rationale": "… (may be null)"}}
+```
+Same checks as above, except that restrictions are allowed when the papers' excerpts contain them, and statistics or
+citations are never allowed (they would be findings copied from the papers). The UI confirms the question with
+`PUT /api/workspace` and then uploads the chosen PDFs with `mode=library`.
+Errors: `422` no papers / unreadable PDF / too many files · `413` · `503` · `502` as above.
+
 ### `POST /api/papers/{paper_id}/analyze` (Stage C)
 User-started re-analysis of a stored `pending` paper under the current question: extraction from its stored
 sentences, comparison with already-analyzed claims, and impact assessment for evaluated papers. Never deletes the

@@ -267,3 +267,37 @@ def test_question_module_has_no_dependency_on_ingestion_or_the_database():
     imported = {(n.module or "") for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     imported |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert not imported & {"db", "ingest", "pipeline", "chat"}, imported
+# ---------- POST /api/question/propose-from-papers (paper-first onboarding) ----------
+from .test_pipeline import PAPERS, pdf  # noqa: E402
+
+def _pdf_files(n=2):
+    return [("files", (f"p{i}.pdf", pdf(text), "application/pdf"))
+            for i, (_, text) in enumerate(list(PAPERS.values())[:n])]
+
+def test_propose_from_uploaded_pdfs_writes_nothing(api):
+    c, fake = api
+    before = (stored_question(), counts()["papers"])
+    r = c.post("/api/question/propose-from-papers", files=_pdf_files())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["proposal"]["question"].endswith("?") and body["saved"] is False
+    assert body["source"] == "gemini_papers" and len(body["papers"]) == 2
+    assert "PAPER 1:" in fake.prompts[-1] and "PAPER 2:" in fake.prompts[-1]
+    assert (stored_question(), counts()["papers"]) == before  # PDFs were read, never stored
+
+def test_propose_from_stored_papers_when_no_files_are_sent(api):
+    c, fake = api
+    build_library(c)
+    r = c.post("/api/question/propose-from-papers")
+    assert r.status_code == 200, r.text
+    assert len(r.json()["papers"]) == len(PAPERS)
+
+def test_propose_from_papers_needs_papers(api):
+    c, _ = api
+    assert c.post("/api/question/propose-from-papers").status_code == 422
+
+def test_paper_based_suggestion_may_not_copy_statistics_from_the_papers():
+    basis = "Students using the tutor scored 25% higher after 12 weeks."
+    with pytest.raises(questions.ProposalRejectedError):
+        questions.validate_proposal(QuestionProposal(question="Do AI tutors raise test scores by 25% for students?",
+                                                     rationale="r"), (), interest=basis, evidence_basis="")

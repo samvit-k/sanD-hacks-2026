@@ -125,15 +125,19 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
   }, [live, workspace])
   // Called only after the server confirmed the save. A failed refresh throws back to the dialog, which
   // reports "saved, but the view was not updated" and offers a retry (it never re-sends the question).
-  const onQuestionConfirmed = useCallback(async (ws) => {
+  const onQuestionConfirmed = useCallback(async (ws, { files = [] } = {}) => {
     await research.refresh({ fallback: false })
     setQuestionOpen(false)
+    // Paper-first: the PDFs the question was suggested from become the initial library (unless kept papers
+    // await re-analysis first; the server refuses new uploads then).
     const pending = ws?.pending_papers?.length ?? 0
-    addNote(ws?.analysis_cleared
+    const added = files.length && !pending ? uploads.add(files, 'library').accepted.length : 0
+    const tail = added ? ` Adding ${added} ${added === 1 ? 'paper' : 'papers'} to the library.` : ''
+    addNote((ws?.analysis_cleared
       ? `Central question changed. The earlier analysis was cleared; ${pending} ${pending === 1 ? 'paper awaits' : 'papers await'} re-analysis (start it in the workspace panel).`
-      : ws?.reset ? 'Central question set. The earlier project was deleted, as you chose.' : 'Central question set.',
+      : ws?.reset ? 'Central question set. The earlier project was deleted, as you chose.' : 'Central question set.') + tail,
     { tone: 'ok', forSession: sessionId })
-  }, [research.refresh, addNote, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [research.refresh, addNote, sessionId, uploads.add]) // eslint-disable-line react-hooks/exhaustive-deps
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [chatContext, setChatContext] = useState(null)
   const [focusTick, setFocusTick] = useState(0)

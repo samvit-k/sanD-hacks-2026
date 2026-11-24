@@ -17,8 +17,9 @@ import { ApiError, TimeoutError } from '../api/client.js'
 //  - A successful save is final: if the follow-up UI update (`onConfirmed`) fails, the hook reports a
 //    recoverable "saved, but the view was not updated" error and never re-sends the question.
 //
-// Source-agnostic: `offerProposals(list, source)` lets paper-first onboarding (later) feed questions
-// proposed from uploaded papers into the same review → edit → confirm flow.
+// Paper-first: in 'papers' mode the suggestion comes from the first pages of the PDFs the user picked
+// (`paperFiles`; none = the project's stored papers). The files are only read by the server; after the
+// question is confirmed, `onConfirmed` receives them so the caller can add them to the library.
 
 export const MAX_QUESTION_LEN = 300
 export const ORIGIN = { gemini: 'gemini', edited: 'edited', manual: 'manual' }
@@ -36,8 +37,9 @@ const FLAGS = { keep_papers: { keepPapers: true }, reset: { reset: true } }
 
 /** `client`: the session-bound API client of the session whose question is being set. */
 export function useQuestionComposer({ client, currentQuestion = null, onConfirmed } = {}) {
-  const [mode, setModeState] = useState('interest') // 'interest' | 'manual'
+  const [mode, setModeState] = useState('interest') // 'interest' | 'papers' | 'manual'
   const [interest, setInterestState] = useState('')
+  const [paperFiles, setPaperFilesState] = useState([]) // File[] picked in 'papers' mode
   const [proposals, setProposals] = useState([]) // [{question, rationale, interest, source}]
   const [draft, setDraftState] = useState('')
   const [origin, setOrigin] = useState(null)
@@ -67,9 +69,13 @@ export function useQuestionComposer({ client, currentQuestion = null, onConfirme
     }
   }, [])
 
+  // What a suggestion is "for": the interest text, or the picked files (so Regenerate avoids repeats per input).
+  const papersKey = `papers:${paperFiles.map((f) => `${f.name}:${f.size}`).join('|')}`
+
   const generate = async ({ again = false } = {}) => {
-    const text = clean(interest)
-    if (!text || busyRef.current) return false
+    const fromPapers = mode === 'papers'
+    const text = fromPapers ? papersKey : clean(interest)
+    if ((!fromPapers && !text) || busyRef.current) return false
     busyRef.current = true
     const id = ++reqRef.current
     const versionAtStart = draftVersion.current
@@ -77,9 +83,12 @@ export function useQuestionComposer({ client, currentQuestion = null, onConfirme
     setError(null)
     const previous = again ? proposals.filter((p) => p.interest === text).map((p) => p.question) : []
     try {
-      const res = await client.proposeQuestion(text, previous)
+      const res = fromPapers
+        ? await client.proposeQuestionFromPapers(paperFiles, previous)
+        : await client.proposeQuestion(text, previous)
       if (id !== reqRef.current) return false // superseded: never touches newer state
-      offerProposals([{ ...res.proposal, interest: res.interest }], res.source ?? 'gemini',
+      offerProposals([{ ...res.proposal, interest: fromPapers ? text : res.interest, papers: res.papers }],
+        res.source ?? 'gemini',
         { replaceDraft: draftVersion.current === versionAtStart })
       return true
     } catch (err) {
@@ -127,8 +136,14 @@ export function useQuestionComposer({ client, currentQuestion = null, onConfirme
     setInterestState(text)
   }
 
+  /** Different files: an in-flight suggestion for the old selection is abandoned. */
+  const setPaperFiles = (files) => {
+    cancelGeneration()
+    setPaperFilesState(Array.from(files ?? []))
+  }
+
   const setMode = (m) => {
-    if (m === 'manual') cancelGeneration()
+    if (m !== mode) cancelGeneration()
     setModeState(m)
     setError(null)
     if (m === 'manual' && !draft) setOrigin(ORIGIN.manual)
@@ -141,7 +156,7 @@ export function useQuestionComposer({ client, currentQuestion = null, onConfirme
 
   const runAfterSave = async (ws, q, from) => {
     try {
-      await onConfirmed?.(ws, { question: q, origin: from })
+      await onConfirmed?.(ws, { question: q, origin: from, ...(mode === 'papers' && paperFiles.length ? { files: paperFiles } : {}) })
       setError(null)
     } catch (err) {
       setError({ kind: 'after_save', message: `The question was saved, but the view could not be updated (${err?.message ?? 'unknown error'}).` })
@@ -187,7 +202,7 @@ export function useQuestionComposer({ client, currentQuestion = null, onConfirme
   const retryAfterSave = () => saved && runAfterSave(saved.workspace, saved.question, origin)
 
   return {
-    mode, setMode, interest, setInterest, proposals, latest, draft, setDraft, origin, pickProposal,
+    mode, setMode, interest, setInterest, paperFiles, setPaperFiles, proposals, latest, draft, setDraft, origin, pickProposal,
     revert: () => pickProposal(latest), keptEdits,
     generating, generate, regenerate: () => generate({ again: true }), cancelGeneration, offerProposals,
     confirming, confirm, canConfirm, unchanged, saved, retryAfterSave,
