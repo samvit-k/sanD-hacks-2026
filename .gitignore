@@ -15,4 +15,3 @@ data/
 .env.example
 CLAUDE.md
 FRONTEND_UPDATE.md
-vercel.json
