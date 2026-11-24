@@ -1,8 +1,18 @@
 .env
+.env.*
 node_modules/
 __pycache__/
 .venv/
 .DS_Store
 .pytest_cache/
 frontend/dist/
-.claude/settings.local.json
+.claude/
+.vercel/
+data/
+*.dump
+
+# Local-only project docs and config
+.env.example
+CLAUDE.md
+FRONTEND_UPDATE.md
+vercel.json
