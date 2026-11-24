@@ -179,10 +179,10 @@ function ClearChatButton({ chat, projectTitle, onCleared }) {
       <button type="button" className="link-btn danger-link chat-clear" disabled={!!chat.pending}
         title={chat.pending ? 'Wait until the current answer has arrived.' : 'Permanently delete this project’s conversation'}
         onClick={() => setOpen(true)}>
-        Clear chat
+        Clear Chat
       </button>
       {open && (
-        <ConfirmDialog title="Clear this project’s conversation?" project={projectTitle} confirmLabel="Clear chat"
+        <ConfirmDialog title="Clear this project’s conversation?" project={projectTitle} confirmLabel="Clear Chat"
           busyLabel="Clearing…" onCancel={() => setOpen(false)}
           onConfirm={async () => { const res = await chat.clear(); setOpen(false); onCleared?.(res) }}>
           <p>

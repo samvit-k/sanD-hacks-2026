@@ -22,17 +22,17 @@ function panel(props = {}) {
 }
 
 describe('WorkspacePanel — clearing papers', () => {
-  it('"Clear all papers" states exactly what is deleted (including the chat) and runs only after confirming', async () => {
+  it('"Clear All Papers" states exactly what is deleted (including the chat) and runs only after confirming', async () => {
     const onClearPapers = vi.fn(async () => {})
     panel({ onClearPapers })
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all papers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear All Papers' }))
     const dialog = screen.getByRole('alertdialog')
     expect(dialog.textContent).toContain('2 papers')
     expect(dialog.textContent).toContain('5 claims')
     expect(dialog.textContent).toContain('this project\'s chat')
     expect(dialog.textContent).toContain('The central question is kept')
     expect(onClearPapers).not.toHaveBeenCalled()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all papers' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear All Papers' }))
     await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(onClearPapers).toHaveBeenCalledTimes(1)
   })
@@ -61,22 +61,22 @@ describe('WorkspacePanel — clearing papers', () => {
 
   it('all clearing controls are disabled while work runs, and absent offline or without papers', () => {
     const { unmount } = panel({ canClear: false })
-    expect(screen.getByRole('button', { name: 'Clear all papers' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Clear All Papers' }).disabled).toBe(true)
     for (const b of screen.getAllByRole('button', { name: /^Remove “/ })) expect(b.disabled).toBe(true)
     unmount()
     const { unmount: u2 } = panel({ onClearPapers: null, onRemovePaper: null })
-    expect(screen.queryByRole('button', { name: 'Clear all papers' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Clear All Papers' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Remove “/ })).toBeNull()
     u2()
     panel({ graph: { nodes: [], papers: {} } })
-    expect(screen.queryByRole('button', { name: 'Clear all papers' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Clear All Papers' })).toBeNull()
   })
 
   it('a refused clear (e.g. analysis running in another tab) keeps the dialog open with the reason', async () => {
     const onClearPapers = vi.fn(async () => { throw new Error('"Paper X" is being analyzed right now.') })
     panel({ onClearPapers })
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all papers' }))
-    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear all papers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear All Papers' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear All Papers' }))
     expect((await screen.findByRole('alert')).textContent).toContain('being analyzed')
     expect(screen.getByRole('alertdialog')).toBeTruthy()
   })

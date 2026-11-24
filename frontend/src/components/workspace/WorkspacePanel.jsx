@@ -134,7 +134,7 @@ export default function WorkspacePanel({
               <button type="button" className="link-btn danger-link" disabled={!canClear}
                 title={canClear ? 'Permanently delete every paper in this project' : CLEAR_BLOCKED}
                 onClick={() => setConfirm({ kind: 'all' })}>
-                Clear all papers
+                Clear All Papers
               </button>
             )}
           </div>
@@ -143,7 +143,7 @@ export default function WorkspacePanel({
         </div>
       )}
       {confirm?.kind === 'all' && (
-        <ConfirmDialog title="Clear all papers in this project?" project={projectTitle} confirmLabel="Clear all papers"
+        <ConfirmDialog title="Clear all papers in this project?" project={projectTitle} confirmLabel="Clear All Papers"
           busyLabel="Clearing…" onCancel={() => setConfirm(null)}
           onConfirm={async () => { await onClearPapers(); setConfirm(null) }}>
           <p>
