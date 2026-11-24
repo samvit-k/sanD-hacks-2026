@@ -37,6 +37,18 @@ export function RichText({ text, references = {}, onReference }) {
   })
 }
 
+/** A turn whose evidence came from a paper that was later removed: kept for the record, no longer used. */
+export function RemovedEvidenceNote({ message }) {
+  if (!message.evidence_removed) return null
+  const titles = (message.removed_evidence ?? []).map((p) => `“${p.title}”`)
+  return (
+    <div className="warn-card removed-evidence" role="note" data-testid="removed-evidence">
+      <b>Evidence removed.</b> This answer relied on {titles.length ? titles.join(', ') : 'a paper'}, which was removed from
+      the project. It is kept for the record, its quotes are no longer shown, and it is not used as context for new answers.
+    </div>
+  )
+}
+
 /** Minimize/expand control for one exchange (a question and the answer to it). */
 function MinimizeButton({ collapsed, onToggle }) {
   return (
@@ -55,7 +67,8 @@ export default function ChatMessage({ message, contextLabel, onReference, stale 
   }
   if (message.role === 'user') {
     return (
-      <div className={`chat-row user${era}${collapsed ? ' collapsed' : ''}`} data-testid="user-message">
+      <div className={`chat-row user${era}${collapsed ? ' collapsed' : ''}${message.evidence_removed ? ' evidence-removed' : ''}`}
+        data-testid="user-message">
         <div className="chat-bubble">
           {message.context && contextLabel && <div className="chat-about">About: {contextLabel(message.context)}</div>}
           <div className="chat-prompt" title={collapsed ? message.content : undefined}>{message.content}</div>
@@ -68,12 +81,14 @@ export default function ChatMessage({ message, contextLabel, onReference, stale 
   if (message.guardrail) {
     return (
       <div className={`chat-row assistant${era}`} data-testid="assistant-message">
+        <RemovedEvidenceNote message={message} />
         <div className="warn-card" role="note"><b>Answer withheld.</b> {message.content}</div>
       </div>
     )
   }
   return (
-    <div className={`chat-row assistant${era}`} data-testid="assistant-message">
+    <div className={`chat-row assistant${era}${message.evidence_removed ? ' evidence-removed' : ''}`} data-testid="assistant-message">
+      <RemovedEvidenceNote message={message} />
       {message.integrity && (
         // Shown BEFORE the answer: the server re-checked this stored answer against today's author information.
         <div className="indep indep-review chat-integrity" role="note" data-testid="chat-integrity">
@@ -92,7 +107,9 @@ export default function ChatMessage({ message, contextLabel, onReference, stale 
           {message.cited.map((q) => <VerifiedQuote key={q.id} quote={q} paperTitle={q.paper_title} />)}
         </div>
       ) : (
-        <div className="chat-nosources">No source sentences cited.</div>
+        <div className="chat-nosources">
+          {message.evidence_removed ? 'Its source sentences were removed with the paper.' : 'No source sentences cited.'}
+        </div>
       )}
     </div>
   )

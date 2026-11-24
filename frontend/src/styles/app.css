@@ -709,3 +709,22 @@ button.node-chip:hover { background: var(--hover); color: var(--text); }
 .chat-row.collapsed .chat-about { display: none; }
 .chat-minimized { align-self: flex-end; font-size: 11.5px; color: var(--faint); font-style: italic; }
 .legend-logo { width: 16px; height: 16px; margin: -2px -2px -2px -3px; flex: none; }
+
+/* ---------- Clearing chats / papers ---------- */
+.sb-section-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.link-btn.danger-link { color: #8a3a32; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.link-btn.danger-link:disabled { color: var(--faint); cursor: not-allowed; text-decoration: none; }
+.chat-head-actions { display: inline-flex; align-items: baseline; gap: 12px; }
+.paper-item { position: relative; }
+.paper-item .paper-card { padding-right: 34px; }
+.paper-remove { position: absolute; top: 8px; right: 6px; width: 24px; height: 24px; opacity: 0; transition: opacity 0.12s; }
+.paper-item:hover .paper-remove, .paper-remove:focus-visible { opacity: 1; }
+.paper-remove:hover:not(:disabled) { color: #8a3a32; background: rgba(196, 86, 75, 0.1); }
+.paper-remove:disabled { cursor: not-allowed; }
+.paper-remove svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+@media (hover: none) { .paper-remove { opacity: 1; } }
+.qd-danger p { margin: 0 0 8px; }
+.qd-danger p:last-child { margin-bottom: 0; }
+.qd-danger .qd-current { margin: 0 0 8px; }
+.removed-evidence { margin-bottom: 6px; font-size: 13px; }
+.chat-row.evidence-removed .model-box, .chat-row.user.evidence-removed .chat-bubble { opacity: 0.72; }

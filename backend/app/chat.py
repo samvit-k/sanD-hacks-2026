@@ -569,6 +569,8 @@ def message_payloads(conn, rows: List[Dict]) -> List[Dict]:
             "context": m.get("context"), "insufficient_evidence": m["insufficient_evidence"],
             "guardrail": m.get("guardrail"), "question": m.get("question"), "created_at": m["created_at"].isoformat() if m.get("created_at") else None,
             "cited": cited,
+            "evidence_removed": bool(m.get("evidence_removed")),
+            "removed_evidence": m.get("removed_evidence") or [],
             "references": resolve_references(m["content"], node_refs, rels, set(papers)) if m["role"] == "assistant" else {},
             "integrity": _integrity(m, authors, claim_paper, rel_claims) if m["role"] == "assistant" else None,
         })
@@ -605,7 +607,8 @@ def ask(llm: LLM, question: str, message: str, context: Optional[Dict] = None,
     with db.connect() as conn:
         # Only turns asked under the current question reach the model (a changed question is a new frame).
         ensure_context_exists(conn, ctx_item)
-        earlier = db.chat_messages(conn, sid, limit=HISTORY_TURNS, question=question)
+        # Turns whose evidence was removed (a paper was removed) never reach the model again.
+        earlier = db.chat_messages(conn, sid, limit=HISTORY_TURNS, question=question, for_model=True)
         try:
             ctx = gather_context(conn, llm, text, ctx_item)
         except Exception as exc:  # embedding call failed

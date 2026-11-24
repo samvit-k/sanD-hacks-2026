@@ -118,6 +118,12 @@ export function sessionApi(sessionId) {
     lookupPaper: (sha256) => r(`/api/papers/lookup?sha256=${encodeURIComponent(sha256)}`),
     discover: (body = {}) => r('/api/discover', { method: 'POST', json: body, timeoutMs: 120000 }),
     chatHistory: () => r('/api/chat/messages'),
+    // Permanent and confirmed by the user first. Each applies to THIS session only; the question is kept.
+    clearChat: () => r('/api/chat/messages?confirm=true', { method: 'DELETE' }),
+    // Every paper, its analysis AND the conversation (its citations point at the deleted text).
+    clearPapers: () => r('/api/papers?confirm=true', { method: 'DELETE' }),
+    // One paper and its analysis. Chat turns that used its evidence are kept but flagged.
+    removePaper: (paperId) => r(`/api/papers/${encodeURIComponent(paperId)}?confirm=true`, { method: 'DELETE' }),
     chat: ({ message, context = null }) =>
       r('/api/chat', { method: 'POST', json: { message, context }, timeoutMs: CHAT_TIMEOUT_MS }),
   }

@@ -95,6 +95,45 @@ def _transaction(conn):
         conn.close()
 
 
+class StaleOperation(RuntimeError):
+    """The project's papers or conversation were cleared while this operation was running; it stored nothing."""
+
+    def __init__(self, what: str = "papers"):
+        msg = ("The conversation was cleared while this answer was being prepared. It was not saved."
+               if what == "chat" else
+               "This project's papers were cleared or removed while this was running, so nothing was saved.")
+        super().__init__(msg)
+        self.what = what
+
+
+# Data generations captured by db.guarded(): (schema, {"papers": n, "chat": m}) for the running operation.
+_epochs: contextvars.ContextVar[Optional[tuple]] = contextvars.ContextVar("spidermonkey_epochs", default=None)
+_upgraded: set = set()  # session schemas whose additive DDL was checked in this process
+
+
+def _ensure_session_ddl(conn, schema: str) -> None:
+    """Projects created before the clear/epoch feature gain its (additive, idempotent) tables and columns the
+    first time this process touches them. Never drops or rewrites data."""
+    if schema in _upgraded:
+        return
+    present = conn.execute("SELECT to_regclass(%s) AS t", (f"{schema}.data_epochs",)).fetchone()["t"]
+    if present is None:
+        _apply_session_ddl(conn, schema)
+    _upgraded.add(schema)
+
+
+def _check_epochs(conn, schema: str) -> None:
+    """Inside a guarded operation: hold the epoch row FOR SHARE for this whole transaction (a clear, which takes
+    it FOR UPDATE, waits for us or we wait for it) and refuse if a clear happened since the operation began."""
+    guard = _epochs.get()
+    if not guard or guard[0] != schema:
+        return
+    row = conn.execute("SELECT papers, chat FROM data_epochs WHERE id = 1 FOR SHARE").fetchone()
+    for key, expected in guard[1].items():
+        if row is None or row[key] != expected:
+            raise StaleOperation(key)
+
+
 @contextmanager
 def connect():
     """Connection scoped to the current session's schema (see use_session)."""
@@ -106,9 +145,50 @@ def connect():
         exists = conn.execute("SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema,)).fetchone()
         if not exists:
             raise SessionNotFound(schema[3:])
+        _ensure_session_ddl(conn, schema)
         conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
         register_vector(conn)
+        _check_epochs(conn, schema)
         yield conn
+
+
+@contextmanager
+def guarded(papers: bool = True, chat: bool = False):
+    """Run a long operation (upload, re-analysis, chat answer) against the project's data as it is NOW.
+    Every later transaction in this context re-checks the captured generations, so if the papers (or the chat)
+    are cleared meanwhile — from any tab or process — the operation raises StaleOperation instead of writing."""
+    schema = _session.get()
+    if not schema:
+        raise NoSessionError("No research session selected for this operation.")
+    with connect() as conn:
+        row = conn.execute("SELECT papers, chat FROM data_epochs WHERE id = 1").fetchone()
+    expected = {k: row[k] for k, on in (("papers", papers), ("chat", chat)) if on}
+    token = _epochs.set((schema, expected))
+    try:
+        yield
+    finally:
+        _epochs.reset(token)
+
+
+@contextmanager
+def unguarded():
+    """A fresh request: no generation check inherited from any other operation's context."""
+    token = _epochs.set(None)
+    try:
+        yield
+    finally:
+        _epochs.reset(token)
+
+
+def lock_epochs(conn) -> Dict:
+    """Take the project's epoch row FOR UPDATE: waits for in-flight guarded writes to commit, and makes
+    every guarded transaction that starts later wait for this one."""
+    return conn.execute("SELECT papers, chat FROM data_epochs WHERE id = 1 FOR UPDATE").fetchone()
+
+
+def bump_epochs(conn, papers: bool = False, chat: bool = False) -> None:
+    conn.execute("UPDATE data_epochs SET papers = papers + %s, chat = chat + %s WHERE id = 1",
+                 (int(papers), int(chat)))
 
 
 @contextmanager
@@ -276,6 +356,46 @@ def clear_analysis(conn) -> int:
     return conn.execute("UPDATE papers SET analysis_status = 'pending', relevance = NULL").rowcount
 
 
+def processing_papers(conn) -> List[Dict]:
+    return conn.execute("SELECT id, title FROM papers WHERE analysis_status = 'processing' ORDER BY id").fetchall()
+
+
+def clear_chat(conn) -> int:
+    """Delete this project's whole conversation. Returns the number of messages deleted."""
+    return conn.execute("DELETE FROM chat_messages").rowcount
+
+
+def paper_footprint(conn, paper_id: str) -> Dict:
+    """Everything derived from one paper: its claim, relationship, impact and sentence ids."""
+    claims = [r["id"] for r in conn.execute("SELECT id FROM claims WHERE paper_id = %s", (paper_id,))]
+    rels = [r["id"] for r in conn.execute(
+        "SELECT id FROM relationships WHERE claim_a = ANY(%s) OR claim_b = ANY(%s)", (claims, claims))]
+    impacts = [r["id"] for r in conn.execute(
+        "SELECT id FROM impacts WHERE new_claim_id = ANY(%s) OR prior_claim_id = ANY(%s)", (claims, claims))]
+    sentences = [r["id"] for r in conn.execute("SELECT id FROM sentences WHERE paper_id = %s", (paper_id,))]
+    return {"claims": claims, "relationships": rels, "impacts": impacts, "sentences": sentences}
+
+
+def delete_reviews_for(conn, relationship_ids: List[int], impact_ids: List[int]) -> int:
+    """Reviews reference their target by id without a foreign key: remove them with their target."""
+    return conn.execute(
+        """DELETE FROM relationship_reviews WHERE (target_kind = 'relationship' AND target_id = ANY(%s))
+                                               OR (target_kind = 'impact' AND target_id = ANY(%s))""",
+        (relationship_ids, impact_ids)).rowcount
+
+
+def flag_chat_messages(conn, ids: List[int], paper: Dict) -> int:
+    """Mark messages whose evidence came from a removed paper (kept for the record, never used as context)."""
+    if not ids:
+        return 0
+    entry = Jsonb([{"paper_id": paper["id"], "title": paper["title"]}])
+    return conn.execute(
+        """UPDATE chat_messages SET evidence_removed = true,
+                  removed_evidence = CASE WHEN removed_evidence @> %s THEN removed_evidence
+                                          ELSE removed_evidence || %s END
+           WHERE id = ANY(%s)""", (entry, entry, ids)).rowcount
+
+
 def delete_claims_for_paper(conn, paper_id: str) -> None:
     """Leftovers of an interrupted re-analysis (cascades to their relationships/impacts)."""
     conn.execute("DELETE FROM claims WHERE paper_id = %s", (paper_id,))
@@ -302,15 +422,21 @@ def insert_chat_message(conn, m: Dict) -> Dict:
     ).fetchone()
 
 
-def chat_messages(conn, session_id: str, limit: int = 200, question: Optional[str] = None) -> List[Dict]:
+def chat_messages(conn, session_id: str, limit: int = 200, question: Optional[str] = None,
+                  for_model: bool = False) -> List[Dict]:
     """The session's messages, oldest first. With `question`, only messages written under that question.
+    `for_model=True` leaves out turns whose evidence was removed: they must never reach the model as context.
     The table lives in the session's own schema, so every row belongs to this session; `session_id` is not used
     as a filter (rows migrated from the single-workspace layout carry the label 'default')."""
-    if question is None:
-        rows = conn.execute("SELECT * FROM chat_messages ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM chat_messages WHERE question = %s ORDER BY id DESC LIMIT %s",
-                            (question, limit)).fetchall()
+    where, params = [], []
+    if question is not None:
+        where.append("question = %s")
+        params.append(question)
+    if for_model:
+        where.append("NOT evidence_removed")
+    clause = f"WHERE {' AND '.join(where)} " if where else ""
+    rows = conn.execute(f"SELECT * FROM chat_messages {clause}ORDER BY id DESC LIMIT %s",
+                        (*params, limit)).fetchall()
     return list(reversed(rows))
 
 

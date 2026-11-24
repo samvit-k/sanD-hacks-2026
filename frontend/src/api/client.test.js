@@ -87,4 +87,15 @@ describe('api client', () => {
       ['/api/sessions/aaaaaaaaaaaa?confirm=aaaaaaaaaaaa', 'DELETE']])
     expect(spy.mock.calls[0][1].headers[SESSION_HEADER]).toBeUndefined()
   })
+
+  it('clearing endpoints are DELETEs, explicitly confirmed, and carry this session only', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockReturnValue(reply(200, {}))
+    await client.clearChat()
+    await client.clearPapers()
+    await client.removePaper('paper a/1')
+    expect(spy.mock.calls.map(([url, init]) => [url, init.method, init.headers[SESSION_HEADER]])).toEqual([
+      ['/api/chat/messages?confirm=true', 'DELETE', 'aaaaaaaaaaaa'],
+      ['/api/papers?confirm=true', 'DELETE', 'aaaaaaaaaaaa'],
+      ['/api/papers/paper%20a%2F1?confirm=true', 'DELETE', 'aaaaaaaaaaaa']])
+  })
 })

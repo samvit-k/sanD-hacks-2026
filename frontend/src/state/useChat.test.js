@@ -145,3 +145,76 @@ describe('useChat', () => {
     expect(result.current.pending).toMatchObject({ text: 'Why do Nodes 4 and 7 disagree?' })
   })
 })
+
+describe('useChat — clearing', () => {
+  const withClear = (sid) => {
+    const c = clientFor(sid)
+    c.clearChat = vi.fn(() => Promise.resolve({ deleted: 2 }))
+    return c
+  }
+
+  it('clear() deletes on the server, empties the conversation and drops this session\'s notes', async () => {
+    const c = withClear('default')
+    const { result } = renderHook(() => useChat(c))
+    await act(async () => { historyCalls[0].resolve({ messages: [msg(1, 'user', 'q'), msg(2, 'assistant', 'a')] }) })
+    act(() => { result.current.addNote('Upload finished.') })
+    expect(result.current.messages).toHaveLength(3)
+    await act(async () => { await result.current.clear() })
+    expect(c.clearChat).toHaveBeenCalledTimes(1)
+    expect(result.current.messages).toEqual([])
+  })
+
+  it('refuses to clear while an answer is pending (nothing is sent to the server)', async () => {
+    const c = withClear('default')
+    const { result } = renderHook(() => useChat(c))
+    await ready(result)
+    act(() => { result.current.send('Do tutors help?') })
+    await expect(result.current.clear()).rejects.toThrow(/current answer/)
+    expect(c.clearChat).not.toHaveBeenCalled()
+  })
+
+  it('after resetLocal, a late answer or a late history response cannot bring deleted messages back', async () => {
+    const { result } = renderHook(() => useChat(clientFor('default')))
+    act(() => { result.current.reload() })                      // history load #2 in flight
+    let p
+    act(() => { p = result.current.send('in flight') })          // answer in flight
+    act(() => { result.current.resetLocal() })                   // e.g. all papers were cleared
+    await act(async () => {
+      chatCalls[0].resolve(reply(5))
+      historyCalls[0].resolve({ messages: [msg(1, 'user', 'old')] })
+      historyCalls[1].resolve({ messages: [msg(1, 'user', 'old')] })
+      await p
+    })
+    expect(result.current.messages).toEqual([])
+    expect(result.current.pending).toBeNull()
+    // The guard was released: the user can ask again right away.
+    let p2
+    act(() => { p2 = result.current.send('next') })
+    expect(chatCalls).toHaveLength(2)
+    await act(async () => { chatCalls[1].resolve(reply(9)); await p2 })
+    expect(result.current.messages.map((m) => m.id)).toEqual([9, 10])
+  })
+
+  it('a newer history load updates messages already shown (e.g. an "evidence removed" flag)', async () => {
+    const { result } = renderHook(() => useChat(clientFor('default')))
+    await act(async () => { historyCalls[0].resolve({ messages: [msg(1, 'user', 'q'), msg(2, 'assistant', 'a')] }) })
+    act(() => { result.current.reload() })
+    await act(async () => {
+      historyCalls[1].resolve({ messages: [msg(1, 'user', 'q'), { ...msg(2, 'assistant', 'a'), evidence_removed: true }] })
+    })
+    expect(result.current.messages[1].evidence_removed).toBe(true)
+  })
+
+  it('reports a 409 data_changed (cleared elsewhere) so the workspace can re-sync', async () => {
+    const onDataChanged = vi.fn()
+    const { result } = renderHook(() => useChat(clientFor('default'), { onDataChanged }))
+    await ready(result)
+    let p
+    act(() => { p = result.current.send('q') })
+    const err = Object.assign(new Error('The conversation was cleared while this answer was being prepared.'),
+      { detail: { code: 'data_changed', cleared: 'chat' } })
+    await act(async () => { chatCalls[0].reject(err); await p })
+    expect(onDataChanged).toHaveBeenCalledWith({ code: 'data_changed', cleared: 'chat' })
+    expect(result.current.error.message).toMatch(/cleared/)
+  })
+})

@@ -174,3 +174,20 @@ CREATE TABLE IF NOT EXISTS relationship_reviews (
 ALTER TABLE sentences ADD COLUMN IF NOT EXISTS block_kind text;
 ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_check text;
 CREATE INDEX IF NOT EXISTS relationship_reviews_target ON relationship_reviews (target_kind, target_id);
+
+-- ---------- Clearing chats / papers (additive) ----------
+-- Chat turns whose evidence was later removed (a paper was removed from the project). Kept for the record, shown
+-- with a notice, and never sent to the model as conversation context again. `removed_evidence`: [{paper_id, title}].
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS evidence_removed boolean NOT NULL DEFAULT false;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS removed_evidence jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- Data generations of this project. A clear bumps the matching counter in the same transaction that deletes the
+-- data (holding this row FOR UPDATE). Long-running operations (uploads, re-analysis, chat answers) record the
+-- counters when they start and re-check them FOR SHARE in every later transaction, so a late result can never
+-- write data back after a clear (see db.guarded).
+CREATE TABLE IF NOT EXISTS data_epochs (
+    id     int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    papers bigint NOT NULL DEFAULT 0,
+    chat   bigint NOT NULL DEFAULT 0
+);
+INSERT INTO data_epochs (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

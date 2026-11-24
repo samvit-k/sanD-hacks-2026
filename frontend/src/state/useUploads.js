@@ -158,7 +158,8 @@ export function useUploads({ client, refresh, onSettled, hashFile = sha256Hex } 
           // Not a failure: the server may have finished or still be working. Check this exact file.
           await reconcile(item.key, sha256)
         } else if (err instanceof ApiError) {
-          finish(item.key, { status: STATUS.failed, message: err.message, duplicate: err.detail?.code === 'duplicate' })
+          finish(item.key, { status: STATUS.failed, message: err.message, duplicate: err.detail?.code === 'duplicate',
+            code: err.detail?.code ?? null })
         } else {
           finish(item.key, { status: STATUS.failed, message: err?.message ?? 'Upload failed.' })
         }

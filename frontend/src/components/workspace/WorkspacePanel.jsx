@@ -1,9 +1,14 @@
+import { useState } from 'react'
 import { describeExtraction } from '../../graph/extraction.js'
 import { claimCounts } from '../../graph/toElements.js'
+import ConfirmDialog from '../ConfirmDialog.jsx'
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
+const CLEAR_BLOCKED = 'Not available while papers are being uploaded or analyzed, or while offline.'
 
 // Left research workspace (BioOKF sidebar language): the central question (set / change through the
 // question dialog), deliberate re-analysis after a confirmed question change, and the papers.
-function PaperList({ graph, selection, refs, onSelectPaper }) {
+function PaperList({ graph, selection, refs, onSelectPaper, onRemove = null, canRemove = false }) {
   const papers = Object.values(graph?.papers ?? {})
   const counts = claimCounts(graph)
   if (!papers.length) return <p className="empty-note">No papers yet.</p>
@@ -15,7 +20,7 @@ function PaperList({ graph, selection, refs, onSelectPaper }) {
         const n = counts[`paper:${p.id}`] ?? 0
         const outcome = describeExtraction(p.extraction)
         return (
-          <li key={p.id}>
+          <li key={p.id} className="paper-item">
             <button type="button" className={`paper-card ${active ? 'active' : ''}`} onClick={() => onSelectPaper(p.id)}>
               <span className="paper-title">
                 <span className={`node-dot ${p.access_level === 'abstract' ? 'dashed' : ''}`}
@@ -38,6 +43,14 @@ function PaperList({ graph, selection, refs, onSelectPaper }) {
                 </span>
               )}
             </button>
+            {onRemove && (
+              <button type="button" className="icon-btn paper-remove" disabled={!canRemove}
+                aria-label={`Remove “${p.title}” from this project`}
+                title={canRemove ? 'Remove this paper from the project' : CLEAR_BLOCKED}
+                onClick={() => onRemove({ ...p, claims: n })}>
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+              </button>
+            )}
           </li>
         )
       })}
@@ -76,9 +89,12 @@ function ReanalysisCard({ pending, reanalysis, canRun }) {
 
 export default function WorkspacePanel({
   graph, workspace, selection, refs, onSelectPaper, onSelectQuestion, onEditQuestion, canEditQuestion, reanalysis,
-  collapsed, onToggle, switcher = null,
+  collapsed, onToggle, switcher = null, onClearPapers = null, onRemovePaper = null, canClear = false, projectTitle = null,
 }) {
   const pending = workspace?.pending_papers ?? []
+  const [confirm, setConfirm] = useState(null) // { kind: 'all' } | { kind: 'one', paper } — frozen when opened
+  const nPapers = Object.keys(graph?.papers ?? {}).length
+  const c = workspace?.counts ?? {}
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="Research workspace">
       <div className="sb-head">
@@ -112,9 +128,46 @@ export default function WorkspacePanel({
           </div>
           {reanalysis && <ReanalysisCard pending={pending} reanalysis={reanalysis} canRun={!!canEditQuestion} />}
 
-          <div className="sb-section">Papers</div>
-          <PaperList graph={graph} selection={selection} refs={refs} onSelectPaper={onSelectPaper} />
+          <div className="sb-section sb-section-row">
+            Papers
+            {onClearPapers && nPapers > 0 && (
+              <button type="button" className="link-btn danger-link" disabled={!canClear}
+                title={canClear ? 'Permanently delete every paper in this project' : CLEAR_BLOCKED}
+                onClick={() => setConfirm({ kind: 'all' })}>
+                Clear all papers
+              </button>
+            )}
+          </div>
+          <PaperList graph={graph} selection={selection} refs={refs} onSelectPaper={onSelectPaper}
+            onRemove={onRemovePaper ? (paper) => setConfirm({ kind: 'one', paper }) : null} canRemove={canClear} />
         </div>
+      )}
+      {confirm?.kind === 'all' && (
+        <ConfirmDialog title="Clear all papers in this project?" project={projectTitle} confirmLabel="Clear all papers"
+          busyLabel="Clearing…" onCancel={() => setConfirm(null)}
+          onConfirm={async () => { await onClearPapers(); setConfirm(null) }}>
+          <p>
+            This permanently deletes {plural(c.papers ?? nPapers, 'paper')} and their text, {plural(c.claims ?? 0, 'claim')},
+            {' '}{plural(c.relationships ?? 0, 'relationship')}, impact results, reviews and Node numbers,
+            {' '}<b>and this project&apos;s chat</b> (its quotes come from these papers).
+          </p>
+          <p>The central question is kept. Other projects are not affected. It cannot be undone.</p>
+        </ConfirmDialog>
+      )}
+      {confirm?.kind === 'one' && (
+        <ConfirmDialog title="Remove this paper?" project={projectTitle} confirmLabel="Remove paper" busyLabel="Removing…"
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => { await onRemovePaper(confirm.paper); setConfirm(null) }}>
+          <p className="qd-current"><span>Paper:</span> {confirm.paper.title}</p>
+          <p>
+            This permanently deletes the paper, its text, {plural(confirm.paper.claims ?? 0, 'claim')} and every relationship,
+            impact result and review that involves them{confirm.paper.is_new ? ', including its impact analysis' : ''}.
+          </p>
+          <p>
+            The chat is kept. Answers that used this paper are marked “Evidence removed”, its quotes are no longer shown,
+            and they are not used as context for new answers. It cannot be undone.
+          </p>
+        </ConfirmDialog>
       )}
     </aside>
   )

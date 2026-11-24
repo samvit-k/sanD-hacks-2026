@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { describeExtraction } from '../../graph/extraction.js'
 import { MESSAGES, STATUS } from '../../state/useUploads.js'
+import ConfirmDialog from '../ConfirmDialog.jsx'
 import ChatMessage from './ChatMessage.jsx'
 
 const MODES = {
@@ -169,8 +170,33 @@ export function withQuestionDividers(messages, currentQuestion) {
   return out
 }
 
+function ClearChatButton({ chat, projectTitle, onCleared }) {
+  const [open, setOpen] = useState(false)
+  const count = chat.messages.filter((m) => m.role !== 'status').length
+  if (!count) return null
+  return (
+    <>
+      <button type="button" className="link-btn danger-link chat-clear" disabled={!!chat.pending}
+        title={chat.pending ? 'Wait until the current answer has arrived.' : 'Permanently delete this project’s conversation'}
+        onClick={() => setOpen(true)}>
+        Clear chat
+      </button>
+      {open && (
+        <ConfirmDialog title="Clear this project’s conversation?" project={projectTitle} confirmLabel="Clear chat"
+          busyLabel="Clearing…" onCancel={() => setOpen(false)}
+          onConfirm={async () => { const res = await chat.clear(); setOpen(false); onCleared?.(res) }}>
+          <p>
+            This permanently deletes {count} {count === 1 ? 'message' : 'messages'} in this project. Papers, claims and the
+            evidence graph are not affected. Other projects are not affected. It cannot be undone.
+          </p>
+        </ConfirmDialog>
+      )}
+    </>
+  )
+}
+
 function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLabel, onClearContext, onReference, focusTick,
-  currentQuestion, evidenceNote }) {
+  currentQuestion, evidenceNote, projectTitle, onChatCleared }) {
   const [draft, setDraft] = useState('')
   // Exchanges the user minimized, keyed by the id of the question that starts them (view state only).
   const [collapsed, setCollapsed] = useState(() => new Set())
@@ -209,11 +235,14 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
     <section className="as-chat" aria-label="Research assistant chat">
       <div className="sb-section chat-head">
         Ask your research
-        {promptIds.length > 0 && (
-          <button type="button" className="link-btn chat-min-all" onClick={toggleAll}>
-            {allCollapsed ? 'Expand All' : 'Minimize All'}
-          </button>
-        )}
+        <span className="chat-head-actions">
+          {promptIds.length > 0 && (
+            <button type="button" className="link-btn chat-min-all" onClick={toggleAll}>
+              {allCollapsed ? 'Expand All' : 'Minimize All'}
+            </button>
+          )}
+          <ClearChatButton chat={chat} projectTitle={projectTitle} onCleared={onChatCleared} />
+        </span>
       </div>
       <div className="chat-list" ref={listRef} aria-live="polite">
         {chat.messages.length === 0 && !chat.pending && (
@@ -290,6 +319,7 @@ function ChatSection({ chat, chatEnabled, chatBlockedReason, context, contextLab
 export default function AssistantPanel({
   open, onClose, chat, uploads, canUpload, uploadBlockedReason, hasLibrary, chatEnabled, chatBlockedReason,
   context, contextLabel, onClearContext, onReference, focusTick, currentQuestion = null, evidenceNote = '',
+  projectTitle = null, onChatCleared = null,
 }) {
   return (
     <aside id="assistant-panel" className="assistant" hidden={!open} aria-label="Research Assistant">
@@ -304,7 +334,8 @@ export default function AssistantPanel({
         <UploadSection uploads={uploads} canUpload={canUpload} blockedReason={uploadBlockedReason} hasLibrary={hasLibrary} />
         <ChatSection chat={chat} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason} context={context}
           contextLabel={contextLabel} onClearContext={onClearContext} onReference={onReference} focusTick={focusTick}
-          currentQuestion={currentQuestion} evidenceNote={evidenceNote} />
+          currentQuestion={currentQuestion} evidenceNote={evidenceNote} projectTitle={projectTitle}
+          onChatCleared={onChatCleared} />
       </div>
     </aside>
   )

@@ -34,6 +34,9 @@ def _db_guard(fn):
         raise HTTPException(503, str(exc))
     except db.SessionNotFound:
         raise HTTPException(404, {"message": "This research session no longer exists.", "code": "session_not_found"})
+    except db.StaleOperation as exc:
+        # The project's papers or conversation were cleared (in this tab or another) while this ran: nothing saved.
+        raise HTTPException(409, {"message": str(exc), "code": "data_changed", "cleared": exc.what})
 
 
 def _check_layout() -> None:
@@ -68,8 +71,17 @@ def require_session(x_session_id: Optional[str] = Header(None, alias=SESSION_HEA
 
 def _in(sid: str, fn):
     """Run fn with all database access confined to session `sid`."""
-    with db.use_session(sid):
+    with db.use_session(sid), db.unguarded():  # only _guarded() below adds a generation check
         return _db_guard(fn)
+
+
+def _guarded(sid: str, fn, papers: bool = True, chat: bool = False):
+    """Like _in, for long operations: if the project's papers (and, with chat=True, its conversation) are cleared
+    before fn finishes, every later write is refused and the request fails with 409 data_changed."""
+    def run():
+        with db.guarded(papers=papers, chat=chat):
+            return fn()
+    return _in(sid, run)
 
 
 def _touched(sid: str, result):
@@ -279,7 +291,7 @@ def propose_review(req: ReviewProposal, sid: str = Depends(require_session)):
                                        "reason": req.reason.strip(), "reviewer_type": "human",
                                        "reviewer": req.reviewer.strip()})
             return {"id": rid, "original_label": original, "status": "proposed"}
-    return _touched(sid, _in(sid, run))
+    return _touched(sid, _guarded(sid, run))
 
 
 @app.post("/api/reviews/{review_id}/decision")
@@ -341,7 +353,7 @@ def upload_paper(file: UploadFile = File(...), title: Optional[str] = Form(None)
     except RuntimeError as exc:
         raise HTTPException(503, str(exc))
     try:
-        result = _in(sid, lambda: run(llm, data, title=title, doi=doi, url=url, year=year))
+        result = _guarded(sid, lambda: run(llm, data, title=title, doi=doi, url=url, year=year))
     except NoExtractableTextError as exc:
         raise HTTPException(422, str(exc))
     except (pipeline.NoQuestionError, pipeline.NoLibraryError) as exc:
@@ -365,7 +377,7 @@ def analyze_paper(paper_id: str, sid: str = Depends(require_session)):
     except RuntimeError as exc:
         raise HTTPException(503, str(exc))
     try:
-        result = _in(sid, lambda: pipeline.analyze_stored_paper(llm, paper_id))
+        result = _guarded(sid, lambda: pipeline.analyze_stored_paper(llm, paper_id))
     except KeyError:
         raise HTTPException(404, "paper not found")
     except pipeline.AlreadyAnalyzedError as exc:
@@ -397,7 +409,7 @@ def discover(req: DiscoverRequest, sid: str = Depends(require_session)):
             query = paper["title"]
         return discovery.discover(query, for_paper_id=paper["id"] if paper else None)
     try:
-        return _in(sid, run)
+        return _guarded(sid, run)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Discovery sources unavailable: {exc}")
 
@@ -410,6 +422,46 @@ def checks(sid: str = Depends(require_session)):
             v = db.integrity_violations(conn)
         return {"ok": all(not ids for ids in v.values()), "violations": v, "session_id": sid}
     return _in(sid, run)
+
+
+# ---------- clearing (explicitly confirmed; only ever this request's project) ----------
+def _require_confirm(confirm: Optional[bool], what: str) -> None:
+    if confirm is not True:
+        raise HTTPException(409, {"message": f"Clearing {what} needs explicit confirmation (?confirm=true).",
+                                  "code": "confirmation_required"})
+
+
+def _clear(sid: str, fn):
+    try:
+        out = _in(sid, fn)
+    except pipeline.AnalysisRunningError as exc:
+        raise HTTPException(409, {"message": str(exc), "code": "analysis_running"})
+    return _touched(sid, {**out, "session_id": sid})
+
+
+@app.delete("/api/papers")
+def clear_papers(confirm: Optional[bool] = None, sid: str = Depends(require_session)):
+    """Delete every paper of THIS project and everything derived from it, and its conversation. The research
+    question is kept. Refused (409 analysis_running) while a paper is being analyzed."""
+    _require_confirm(confirm, "all papers")
+    return _clear(sid, pipeline.clear_papers)
+
+
+@app.delete("/api/papers/{paper_id}")
+def remove_paper(paper_id: str, confirm: Optional[bool] = None, sid: str = Depends(require_session)):
+    """Remove one paper and its derived analysis. Chat turns that used its evidence are kept but flagged."""
+    _require_confirm(confirm, "this paper")
+    try:
+        return _clear(sid, lambda: pipeline.remove_paper(paper_id))
+    except KeyError:
+        raise HTTPException(404, "paper not found in this project")
+
+
+@app.delete("/api/chat/messages")
+def clear_chat(confirm: Optional[bool] = None, sid: str = Depends(require_session)):
+    """Delete THIS project's conversation. Answers still being prepared are discarded, never saved."""
+    _require_confirm(confirm, "the conversation")
+    return _clear(sid, pipeline.clear_chat)
 
 
 # ---------- research assistant (chat) ----------
@@ -451,7 +503,8 @@ def ask_chat(req: ChatRequest, sid: str = Depends(require_session)):
         raise HTTPException(503, str(exc))
     context: Optional[Dict] = req.context.model_dump() if req.context else None
     try:
-        result = _in(sid, lambda: chat.ask(llm, question, req.message, context=context, session_id=sid))
+        result = _guarded(sid, lambda: chat.ask(llm, question, req.message, context=context, session_id=sid),
+                          papers=True, chat=True)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     except chat.ChatUnavailableError as exc:

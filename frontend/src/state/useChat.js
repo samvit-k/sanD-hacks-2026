@@ -35,7 +35,9 @@ export function withNotes(messages, notes = []) {
 }
 
 /** `client`: the session-bound API client of the research session this conversation belongs to. */
-export function useChat(client, { enabled = true } = {}) {
+export function useChat(client, { enabled = true, onDataChanged = null } = {}) {
+  const changedCb = useRef(onDataChanged)
+  changedCb.current = onDataChanged
   const sessionId = client?.sessionId ?? null
   const [state, setState] = useState({ messages: [], loaded: false, pending: null, error: null })
   const [notes, setNotes] = useState({}) // { [sessionId]: note[] } — survives session switches
@@ -53,7 +55,8 @@ export function useChat(client, { enabled = true } = {}) {
       const res = await client.chatHistory()
       if (gen.current !== g || historyVersion.current !== v) return // superseded
       setState((s) => {
-        const messages = mergeById(res.messages ?? [], s.messages)
+        // The server is authoritative for every message it returns (e.g. a later "evidence removed" flag).
+        const messages = mergeById(s.messages, res.messages ?? [])
         lastServerId.current = messages.length ? messages[messages.length - 1].id : 0
         return { ...s, messages, loaded: true }
       })
@@ -91,6 +94,8 @@ export function useChat(client, { enabled = true } = {}) {
       return true
     } catch (error) {
       if (gen.current !== g) return false
+      // Papers or the chat were cleared (possibly in another tab) while answering: nothing was stored.
+      if (error?.detail?.code === 'data_changed') changedCb.current?.(error.detail)
       // The server stores nothing when it fails, so the same question can simply be retried.
       setState((s) => ({
         ...s,
@@ -127,10 +132,32 @@ export function useChat(client, { enabled = true } = {}) {
 
   const dismissError = useCallback(() => setState((s) => ({ ...s, error: null })), [])
 
+  /**
+   * Forget the local conversation after the server deleted it (clear chat, or clear all papers). Starts a new
+   * generation, so an answer or history load that is still in flight can never bring deleted messages back.
+   */
+  const resetLocal = useCallback(() => {
+    gen.current += 1
+    historyVersion.current += 1
+    sending.current = false
+    lastServerId.current = 0
+    setState({ messages: [], loaded: true, pending: null, error: null })
+    setNotes((all) => ({ ...all, [sessionId]: [] }))
+  }, [sessionId])
+
+  /** Permanently delete this session's conversation (the caller has confirmed it). Refused while answering. */
+  const clear = useCallback(async () => {
+    if (sending.current) throw new Error('Wait until the current answer has arrived, then clear the chat.')
+    const g = gen.current
+    const res = await client.clearChat()
+    if (gen.current === g) resetLocal()
+    return res
+  }, [sessionId, resetLocal]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const messages = useMemo(() => withNotes(state.messages, notes[sessionId]), [state.messages, notes, sessionId])
 
   return {
     messages, loaded: state.loaded, pending: state.pending, error: state.error, sessionId,
-    send, retry, addNote, dismissError, reload: load,
+    send, retry, addNote, dismissError, reload: load, clear, resetLocal,
   }
 }

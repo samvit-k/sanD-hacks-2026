@@ -114,9 +114,12 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
   const sessionId = client?.sessionId ?? null
   const live = source === 'live'
   const chatEnabled = live && !!workspace?.question
-  const chat = useChat(client, { enabled: chatEnabled })
+  // Another tab (or this one) cleared data while a request ran: the server stored nothing; show the current state.
+  const resyncRef = useRef(null)
+  const chat = useChat(client, { enabled: chatEnabled, onDataChanged: () => resyncRef.current?.() })
   const { addNote } = chat
   const onUploadSettled = useCallback((item) => {
+    if (item.code === 'data_changed') resyncRef.current?.()
     if (item.status === STATUS.done && item.mode === 'evaluate' && item.result?.impacts) setImpact(item.result)
     const note = uploadNote(item)
     addNote(note.text, { tone: note.tone, forSession: item.sessionId })
@@ -124,6 +127,8 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
   const uploads = useUploads({ client, refresh: research.refresh, onSettled: onUploadSettled })
   const reanalysis = useReanalysis({ client, refresh: research.refresh })
   const busy = describeBusy({ uploads, reanalysis, chat })
+  // Clearing papers is refused by the server while anything is analyzed; the UI also waits for a pending answer.
+  const canClear = live && !reanalysis.running && !uploads.busy && !chat.pending
   const busyKey = busy?.label ?? ''
   useEffect(() => {
     onBusyChange?.(busy)
@@ -160,6 +165,38 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
   const [chatContext, setChatContext] = useState(null)
   const [focusTick, setFocusTick] = useState(0)
   const [selection, setSelection] = useState(null)
+
+  // ---- clearing (each call is confirmed in a dialog first and applies to THIS project only) ----
+  const refreshAfterClear = useCallback(async (done) => {
+    try {
+      await research.refresh({ fallback: false })
+      addNote(done, { tone: 'ok', forSession: sessionId })
+    } catch {
+      addNote(`${done} The view could not be refreshed; use Retry above the graph.`, { tone: 'warn', forSession: sessionId })
+      research.refresh()
+    }
+  }, [research.refresh, addNote, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const onClearPapers = useCallback(async () => {
+    const res = await client.clearPapers()
+    chat.resetLocal() // the server deleted the conversation with the papers
+    setSelection(null)
+    setChatContext(null)
+    const n = res?.deleted?.papers ?? 0
+    await refreshAfterClear(`All papers were cleared (${n} ${n === 1 ? 'paper' : 'papers'}) and the chat with them. The central question was kept.`)
+  }, [client, chat.resetLocal, refreshAfterClear]) // eslint-disable-line react-hooks/exhaustive-deps
+  const onRemovePaper = useCallback(async (paper) => {
+    const res = await client.removePaper(paper.id)
+    setSelection(null) // it may point at the paper, one of its claims or one of their relationships
+    setChatContext(null)
+    const flagged = res?.chat_messages_flagged ?? 0
+    await refreshAfterClear(`Removed “${paper.title}”.${flagged ? ` ${flagged} chat ${flagged === 1 ? 'message is' : 'messages are'} marked “Evidence removed”.` : ''}`)
+    chat.reload()
+  }, [client, chat.reload, refreshAfterClear]) // eslint-disable-line react-hooks/exhaustive-deps
+  resyncRef.current = () => {
+    chat.resetLocal()
+    chat.reload()
+    research.refresh()
+  }
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const narrow = useNarrow(NARROW_QUERY)
@@ -238,6 +275,10 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
         collapsed={collapsed}
         onToggle={() => setManualCollapsed(!collapsed)}
         switcher={switcher}
+        onClearPapers={live ? onClearPapers : null}
+        onRemovePaper={live ? onRemovePaper : null}
+        canClear={canClear}
+        projectTitle={projectTitle}
       />
       <main className="main">
         <TopBar
@@ -286,7 +327,9 @@ function ResearchWorkspace({ client, switcher, onBusyChange, onSessionData, demo
           : ''}
         hasLibrary={!!workspace?.has_library} chatEnabled={chatEnabled} chatBlockedReason={chatBlockedReason}
         context={chatContext} contextLabel={contextLabel} onClearContext={() => setChatContext(null)}
-        onReference={onReference} focusTick={focusTick}
+        onReference={onReference} focusTick={focusTick} projectTitle={projectTitle}
+        onChatCleared={(res) => addNote(`The conversation was cleared (${res?.deleted ?? 0} messages).`,
+          { tone: 'ok', forSession: sessionId })}
       />
       {client && (
         <QuestionDialog open={questionOpen} client={client} workspace={workspace} onClose={() => setQuestionOpen(false)}

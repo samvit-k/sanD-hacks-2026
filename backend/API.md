@@ -254,6 +254,35 @@ created_at, cited: [{id, paper_id, page, section, text, paper_title}], reference
 - `guardrail` is set (and `content` is an explanation, `cited` empty) when the answer was withheld:
   `invalid_citations`, `invalid_references`, `unverified_quotation`, or `uncited_findings`
   (research statements without any verified source sentence).
+- `evidence_removed` (bool) and `removed_evidence: [{paper_id, title}]`: the turn used evidence from a paper that was
+  later removed. The message is kept for the record, shown with a notice, and never sent to the model again.
+- Errors also include 409 `{code: "data_changed", cleared: "chat"|"papers"}`: the conversation or the papers were
+  cleared (in any tab) while the answer was being prepared. Nothing was stored.
+
+## Clearing (explicitly confirmed; only the `X-Session-Id` project)
+
+Every call needs `?confirm=true` (otherwise 409 `confirmation_required`, nothing changes). Other projects are never
+affected. The research question is always kept.
+
+### `DELETE /api/chat/messages?confirm=true`
+Deletes the conversation. `{session_id, deleted: <messages>}`. Answers still being prepared are discarded (their
+request fails with 409 `data_changed`).
+
+### `DELETE /api/papers?confirm=true`
+Deletes every paper with its sentences, claims, relationships, impacts, reviews, discovery links and node numbers, and
+the conversation (its citations point at the deleted text).
+`{session_id, deleted: {papers, claims, relationships, chat_messages}, workspace}`.
+
+### `DELETE /api/papers/{paper_id}?confirm=true`
+Removes one paper and everything derived from it. The conversation is kept; turns that used the paper's evidence are
+flagged (`evidence_removed`). Node numbers are not reused.
+`{session_id, paper_id, title, was_evaluated, deleted: {claims, relationships, impacts}, chat_messages_flagged, workspace}`.
+404 if the paper is not in this project.
+
+**Concurrency.** Paper clears are refused with 409 `analysis_running` while a paper is being analyzed. Each clear
+bumps a per-project data generation in the same transaction (row lock); uploads, re-analysis, discovery, reviews and
+chat answers that started earlier re-check it before every write and fail with 409 `data_changed` instead of writing
+deleted content back.
 
 ### `GET /api/papers/lookup?sha256=<64 hex>`
 Reconciles an upload whose request timed out: `{found, status: "processing"|"complete"|null, paper}` for the PDF

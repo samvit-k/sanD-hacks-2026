@@ -18,6 +18,7 @@ from .config import settings
 from .contracts import ExtractionResult, ImpactJudgment, PairJudgment
 from .extract import build_extraction_prompt, validate_claims
 from .authors import AuthorIndex
+from .chat import TOKEN_RE
 from .graph import build_graph, build_impact_summary, paper_detail, ref_order
 from .llm import LLM, QuotaExhaustedError
 from .question import MAX_QUESTION_LEN, normalize_question  # noqa: F401  (re-exported)
@@ -122,6 +123,9 @@ def set_workspace_question(question: str, reset: bool = False, keep_papers: bool
         counts = db.analysis_counts(conn)
         changed = q != current
         if changed and counts["papers"] > 0:
+            if keep_papers or reset:
+                db.lock_epochs(conn)  # in-flight uploads/answers based on the old analysis must not write back
+                db.bump_epochs(conn, papers=True, chat=reset)
             if keep_papers:
                 cleared = db.clear_analysis(conn)
             elif reset:
@@ -352,6 +356,8 @@ def _extract_or_discard(llm: LLM, paper_id: str, question: str) -> Tuple[List[in
     (cascades to its sentences/claims) so no half-processed paper is left behind."""
     try:
         return extract_claims(llm, paper_id, question)
+    except db.StaleOperation:
+        raise  # the project was cleared meanwhile: the paper is already gone, nothing to roll back
     except Exception as exc:
         with db.connect() as conn:
             db.delete_paper(conn, paper_id)
@@ -457,6 +463,8 @@ def analyze_stored_paper(llm: LLM, paper_id: str, question: Optional[str] = None
     t0 = time.time()
     try:
         claim_ids, report = extract_claims(llm, paper_id, question)
+    except db.StaleOperation:
+        raise
     except Exception as exc:
         with db.connect() as conn:
             db.delete_claims_for_paper(conn, paper_id)
@@ -473,6 +481,97 @@ def analyze_stored_paper(llm: LLM, paper_id: str, question: Optional[str] = None
     return {"paper": paper_detail(paper), "question": question, "claims_kept": len(claim_ids), "extraction": report,
             "relationships_created": len(rel_ids), "impacts_assessed": impacts, "pending_remaining": remaining,
             "timings_s": {"total": round(time.time() - t0, 1)}}
+
+
+# ---------- clearing (user-confirmed; one project only) ----------
+class AnalysisRunningError(RuntimeError):
+    """Papers are being analyzed right now; clearing must wait until that finishes."""
+
+
+def _refuse_while_processing(conn) -> None:
+    running = db.processing_papers(conn)
+    if running:
+        names = ", ".join(f'"{p["title"]}"' for p in running[:3])
+        raise AnalysisRunningError(f"{names} {'is' if len(running) == 1 else 'are'} being analyzed right now. "
+                                   "Wait until the analysis finishes, then try again.")
+
+
+def clear_chat() -> Dict:
+    """Delete this project's conversation. Answers still being prepared are discarded (chat epoch)."""
+    with db.connect() as conn:
+        db.lock_epochs(conn)
+        deleted = db.clear_chat(conn)
+        db.bump_epochs(conn, chat=True)
+    return {"deleted": deleted}
+
+
+def clear_papers() -> Dict:
+    """Delete every paper of this project and everything derived from it, including the conversation (its
+    citations point at the deleted text). The research question is kept. Refused while an analysis runs."""
+    with db.connect() as conn:
+        db.lock_epochs(conn)  # waits for in-flight guarded writes; later ones see the new epoch and abort
+        _refuse_while_processing(conn)
+        counts = db.analysis_counts(conn)
+        messages = conn.execute("SELECT count(*) AS n FROM chat_messages").fetchone()["n"]
+        db.delete_all(conn)
+        db.bump_epochs(conn, papers=True, chat=True)
+    return {"deleted": {"papers": counts["papers"], "claims": counts["claims"],
+                        "relationships": counts["relationships"], "chat_messages": messages},
+            "workspace": workspace_state()}
+
+
+def turns_touching(rows: List[Dict], fp: Dict, paper_id: str) -> List[int]:
+    """Ids of chat messages that used evidence from the paper: cited one of its sentences, were asked about it
+    (context), or reference its node / claims / relationships. A turn (user question + its answer) is flagged
+    as a whole, so neither half is used as model context again."""
+    sentences, claims, rels = set(fp["sentences"]), set(fp["claims"]), set(fp["relationships"])
+    tokens = {f"paper:{paper_id}"} | {f"claim:{c}" for c in claims} | {f"rel:{r}" for r in rels}
+
+    def touches(m: Dict) -> bool:
+        if sentences.intersection(m.get("cited_sentence_ids") or []):
+            return True
+        ctx = m.get("context") or {}
+        if (ctx.get("kind") == "paper" and ctx.get("id") == paper_id) or \
+                (ctx.get("kind") == "claim" and ctx.get("id") in claims) or \
+                (ctx.get("kind") == "relationship" and ctx.get("id") in rels):
+            return True
+        return bool(tokens.intersection(TOKEN_RE.findall(m.get("content") or "")))
+
+    flagged, last_user = set(), None
+    for m in rows:  # oldest first
+        if m["role"] == "user":
+            last_user = m
+            if touches(m):
+                flagged.add(m["id"])
+        else:
+            if touches(m) or (last_user is not None and last_user["id"] in flagged):
+                flagged.add(m["id"])
+                if last_user is not None:
+                    flagged.add(last_user["id"])
+            last_user = None
+    return sorted(flagged)
+
+
+def remove_paper(paper_id: str) -> Dict:
+    """Delete one paper with its sentences, claims, relationships, impacts, reviews and discovery links.
+    The conversation is kept, but turns that used the paper's evidence are flagged and never reach the model
+    again. Node numbers are append-only and are not reused. Refused while an analysis runs."""
+    with db.connect() as conn:
+        db.lock_epochs(conn)
+        paper = db.get_paper(conn, paper_id)
+        if not paper:
+            raise KeyError(paper_id)
+        _refuse_while_processing(conn)
+        fp = db.paper_footprint(conn, paper_id)
+        rows = db.chat_messages(conn, "", limit=100000)
+        flagged = db.flag_chat_messages(conn, turns_touching(rows, fp, paper_id), paper)
+        db.delete_reviews_for(conn, fp["relationships"], fp["impacts"])
+        db.delete_paper(conn, paper_id)
+        db.bump_epochs(conn, papers=True)
+    return {"paper_id": paper_id, "title": paper["title"], "was_evaluated": bool(paper["is_new"]),
+            "deleted": {"claims": len(fp["claims"]), "relationships": len(fp["relationships"]),
+                        "impacts": len(fp["impacts"])},
+            "chat_messages_flagged": flagged, "workspace": workspace_state()}
 
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

@@ -173,3 +173,69 @@ describe('minimizing chat exchanges', () => {
     expect(screen.getByText('Second answer text.')).toBeTruthy()
   })
 })
+
+describe('clearing the chat', () => {
+  const convo = [{ id: 1, role: 'user', content: 'Do tutors help?', cited: [], references: {} },
+    { ...ANSWER, id: 2 }]
+
+  it('asks for confirmation, then clears through the chat hook and reports it', async () => {
+    const clear = vi.fn(async () => ({ deleted: 2 }))
+    const onChatCleared = vi.fn()
+    panel({ chat: idleChat({ messages: convo, clear }), projectTitle: 'AI tutors', onChatCleared })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }))
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog.textContent).toContain('2 messages')
+    expect(dialog.textContent).toContain('AI tutors')
+    expect(dialog.textContent).toMatch(/Papers, claims and the evidence graph are not affected/)
+    expect(clear).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear chat' }))
+    await vi.waitFor(() => expect(onChatCleared).toHaveBeenCalledWith({ deleted: 2 }))
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('cancel changes nothing; the button is hidden without messages and disabled while answering', () => {
+    const clear = vi.fn()
+    const { unmount } = panel({ chat: idleChat({ messages: convo, clear }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(clear).not.toHaveBeenCalled()
+    unmount()
+    const { unmount: u2 } = panel({ chat: idleChat({ messages: [] }) })
+    expect(screen.queryByRole('button', { name: 'Clear chat' })).toBeNull()
+    u2()
+    panel({ chat: idleChat({ messages: convo, pending: { text: 'x', token: 1 } }) })
+    expect(screen.getByRole('button', { name: 'Clear chat' }).disabled).toBe(true)
+  })
+
+  it('a failed clear keeps the dialog open with the server message', async () => {
+    const clear = vi.fn(async () => { throw new Error('Cannot reach the SpiderMonkey server') })
+    panel({ chat: idleChat({ messages: convo, clear }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear chat' }))
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('Cannot reach')
+  })
+})
+
+describe('chat turns whose evidence was removed', () => {
+  it('shows an "Evidence removed" notice naming the paper, and no stale quotes', () => {
+    render(<ChatMessage message={{ ...ANSWER, cited: [], evidence_removed: true,
+      removed_evidence: [{ paper_id: 'paper-a', title: 'AI tutor RCT' }] }} />)
+    const note = screen.getByTestId('removed-evidence')
+    expect(note.textContent).toContain('“AI tutor RCT”')
+    expect(note.textContent).toMatch(/not used as context/)
+    expect(document.querySelector('.vq')).toBeNull()
+    expect(screen.getByText(/source sentences were removed with the paper/)).toBeTruthy()
+  })
+
+  it('also marks withheld answers, and shows nothing for intact turns', () => {
+    const { unmount } = render(<ChatMessage message={{ ...ANSWER, guardrail: 'uncited_findings', content: 'Withheld.',
+      cited: [], evidence_removed: true, removed_evidence: [{ paper_id: 'p', title: 'P' }] }} />)
+    expect(screen.getByTestId('removed-evidence')).toBeTruthy()
+    unmount()
+    render(<ChatMessage message={ANSWER} />)
+    expect(screen.queryByTestId('removed-evidence')).toBeNull()
+  })
+})
